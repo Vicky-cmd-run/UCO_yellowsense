@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FFF9ED;
+  --surface: #FFFDF7;
+  --primary-navy: #16263A;
+  --primary-yellow: #FFD51F;
+  --warm-gold: #F4A623;
+  --warm-orange: #FF8A16;
+  --text-primary: #29313A;
+  --text-muted: #6B7076;
+  --success: #2F8467;
+  --warning: #D89A20;
+  --danger: #B74C44;
+  --border: #E8DAAE;
+  --radius-card: 16px;
+}
+
+@theme {
+  --color-bg-warm: var(--background);
+  --color-surface: var(--surface);
+  --color-navy: var(--primary-navy);
+  --color-yellow-acc: var(--primary-yellow);
+  --color-gold: var(--warm-gold);
+  --color-orange-acc: var(--warm-orange);
+  --color-text-main: var(--text-primary);
+  --color-text-sub: var(--text-muted);
+  --color-success-acc: var(--success);
+  --color-warning-acc: var(--warning);
+  --color-danger-acc: var(--danger);
+  --color-border-warm: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* Premium White/Cream Card */
+.premium-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 4px 20px -2px rgba(22, 38, 58, 0.03), 0 2px 4px -1px rgba(22, 38, 58, 0.02);
+  padding: 1.5rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.premium-card:hover {
+  box-shadow: 0 10px 30px -4px rgba(22, 38, 58, 0.06), 0 4px 8px -2px rgba(22, 38, 58, 0.04);
+}
+
+/* Concentric Rings Visual Motif */
+.orbital-motif {
+  position: relative;
+  overflow: hidden;
+}
+
+.orbital-motif::before {
+  content: '';
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.orbital-motif::after {
+  content: '';
+  position: absolute;
+  top: -25px;
+  right: -25px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  opacity: 0.2;
+  pointer-events: none;
+}
