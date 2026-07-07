@@ -1,668 +1,264 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useDemoStore } from '../../../stores/demoStore';
-import { apiService } from '../../../services/api';
-import { db } from '../../../services/db';
+import { useDemoStore } from '@/stores/demoStore';
+import { DEMO_VISITS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
 import {
   MapPin, Calendar, Clock, Navigation, CheckCircle, DollarSign,
-  Search, Plus, Filter, RefreshCw, X, AlertTriangle, ChevronRight,
-  TrendingUp, Compass, Map, CheckCircle2, Loader2
+  Search, Plus, ChevronRight, Map, Loader2, Sparkles, Target, Wifi, WifiOff
 } from 'lucide-react';
+import Link from 'next/link';
 
-interface CustomerData {
-  id: string;
-  full_name: string;
-  segment: string;
-  lifecycle_stage: string;
-  mobile: string;
-  city: string;
-  relationship_value: number;
+const formatINR = (v: number) => {
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)} Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)} L`;
+  return `₹${v.toLocaleString('en-IN')}`;
+};
+
+const STATUS_STYLES: Record<string, string> = {
+  SCHEDULED: 'bg-blue-100 text-blue-700',
+  IN_PROGRESS: 'bg-amber-100 text-amber-700',
+  COMPLETED: 'bg-emerald-100 text-emerald-700',
+};
+
+// SVG Route Map — simulated abstract route visualization
+function RouteMap({ visits }: { visits: any[] }) {
+  // Generate simple abstract waypoints
+  const points = [
+    { x: 80, y: 200, label: 'Start (Branch)', base: true },
+    { x: 200, y: 130, label: visits[0]?.customer?.full_name || 'Visit 1' },
+    { x: 340, y: 160, label: visits[1]?.customer?.full_name || 'Visit 2' },
+    { x: 290, y: 260, label: visits[2]?.customer?.full_name || 'Visit 3' },
+    { x: 170, y: 290, label: visits[3]?.customer?.full_name || 'Visit 4' },
+  ];
+
+  const lines = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    lines.push({ x1: points[i].x, y1: points[i].y, x2: points[i + 1].x, y2: points[i + 1].y });
+  }
+
+  return (
+    <div className="bg-[#16263A]/5 rounded-2xl p-4 relative overflow-hidden">
+      <div className="flex items-center gap-2 mb-2">
+        <Map className="w-3.5 h-3.5 text-[#16263A]" />
+        <span className="text-xs font-extrabold text-[#16263A] uppercase tracking-wider">Route Overview — Chennai Zone</span>
+        <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Optimized Route</span>
+      </div>
+      <svg width="100%" viewBox="0 0 420 380" className="w-full" style={{ height: 220 }}>
+        {/* Grid lines */}
+        {[80, 160, 240, 320].map(x => <line key={`vg${x}`} x1={x} y1={40} x2={x} y2={360} stroke="#E8DAAE" strokeWidth={0.5} />)}
+        {[80, 160, 240, 320].map(y => <line key={`hg${y}`} x1={40} y1={y} x2={400} y2={y} stroke="#E8DAAE" strokeWidth={0.5} />)}
+
+        {/* Route lines */}
+        {lines.map((l, i) => (
+          <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#F4A623" strokeWidth={2} strokeDasharray="6 3" />
+        ))}
+
+        {/* Waypoints */}
+        {points.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={p.base ? 10 : 8} fill={p.base ? '#16263A' : i <= (visits.filter(v => v.status === 'COMPLETED').length) ? '#2F8467' : '#F4A623'} />
+            <text x={p.x} y={p.y + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={9} fontWeight="bold">{i === 0 ? '⭐' : i}</text>
+            <text x={p.x} y={p.y + 20} textAnchor="middle" fill="#29313A" fontSize={8} fontWeight="600">{p.label?.split(' ').slice(0, 2).join(' ')}</text>
+          </g>
+        ))}
+      </svg>
+      <p className="text-[10px] text-[#6B7076] text-center mt-1">Total route: ~{visits.reduce((s: number, v: any) => s + (v.distance_km || 0), 0).toFixed(1)} km · ~{visits.reduce((s: number, v: any) => s + (v.travel_mins || 0), 0)} min travel time</p>
+    </div>
+  );
 }
 
 export default function ZRTCommandCenter() {
   const router = useRouter();
   const { networkStatus, activeUser } = useDemoStore();
-  const [visits, setVisits] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<Record<string, CustomerData>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
-  // Search & Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  
-  // Schedule Visit modal state
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [allCustomersList, setAllCustomersList] = useState<CustomerData[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [visitPurpose, setVisitPurpose] = useState('');
-  const [visitDate, setVisitDate] = useState('');
-  const [visitTime, setVisitTime] = useState('');
+  const [visits, setVisits] = useState(DEMO_VISITS);
+  const [filter, setFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [newCustomerId, setNewCustomerId] = useState(DEMO_CUSTOMERS[0].id);
+  const [newPurpose, setNewPurpose] = useState('');
+  const [newDate, setNewDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Load data
-  const loadData = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      // 1. Fetch visits
-      const visitsData = await apiService.fetchVisits();
-      
-      // 2. Fetch customers to display their names/details
-      const customersData = await apiService.fetchCustomers();
-      const customerMap: Record<string, CustomerData> = {};
-      customersData.forEach((c: CustomerData) => {
-        customerMap[c.id] = c;
-      });
-      
-      setVisits(visitsData);
-      setCustomers(customerMap);
-      setAllCustomersList(customersData);
-    } catch (err: any) {
-      console.error(err);
-      setError('Failed to load ZRT visits. Please check connection.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, [networkStatus]);
-
-  // Sync / Refresh handler
-  const handleRefresh = () => {
-    loadData();
-  };
-
-  // Submit visit scheduling
-  const handleScheduleVisit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCustomerId || !visitPurpose || !visitDate || !visitTime) {
-      alert('Please fill out all fields.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const scheduledDateTime = `${visitDate}T${visitTime}:00`;
-      await apiService.createVisit(selectedCustomerId, visitPurpose, scheduledDateTime);
-      setShowScheduleModal(false);
-      setSelectedCustomerId('');
-      setVisitPurpose('');
-      setVisitDate('');
-      setVisitTime('');
-      // Reload list
-      loadData();
-    } catch (err: any) {
-      console.error(err);
-      alert('Failed to schedule visit: ' + err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Filter & Search visits
-  const filteredVisits = visits.filter((visit) => {
-    const customer = customers[visit.customer_id];
-    const customerName = customer?.full_name?.toLowerCase() || '';
-    const purpose = visit.purpose?.toLowerCase() || '';
-    const matchesSearch = customerName.includes(searchQuery.toLowerCase()) || purpose.includes(searchQuery.toLowerCase());
-    
-    if (statusFilter === 'ALL') return matchesSearch;
-    return visit.status === statusFilter && matchesSearch;
+  const filtered = visits.filter(v => {
+    const matchFilter = filter === 'ALL' || v.status === filter;
+    const matchSearch = !search || v.customer?.full_name?.toLowerCase().includes(search.toLowerCase()) || v.purpose.toLowerCase().includes(search.toLowerCase());
+    return matchFilter && matchSearch;
   });
 
-  // KPI calculations
-  const totalVisitsCount = visits.length;
-  const scheduledCount = visits.filter(v => v.status === 'SCHEDULED').length;
-  const inProgressCount = visits.filter(v => v.status === 'IN_PROGRESS').length;
-  const completedCount = visits.filter(v => v.status === 'COMPLETED').length;
+  const todayVisits = visits.filter(v => v.status !== 'COMPLETED');
+  const completedToday = visits.filter(v => v.status === 'COMPLETED').length;
 
-  // Mock travel and opportunity details
-  // In a real system, these would map from geolocations or dynamic computations
-  const mockTravelTimes: Record<string, { dist: string; time: string; delay?: string }> = {
-    '1': { dist: '3.4 km', time: '12 min' },
-    '2': { dist: '7.8 km', time: '22 min', delay: 'Slow traffic' },
-    '3': { dist: '1.2 km', time: '5 min' },
-    '4': { dist: '12.1 km', time: '35 min' },
-    '5': { dist: '5.6 km', time: '18 min' },
-  };
-
-  const getTravelDetails = (visitId: string, index: number) => {
-    // Return mock coordinate distances
-    const key = (index % 5 + 1).toString();
-    return mockTravelTimes[key] || { dist: '4.5 km', time: '15 min' };
-  };
-
-  // Total opportunities potential locked in the active visits
-  const totalOpportunityLocked = filteredVisits.reduce((acc, v) => {
-    const cust = customers[v.customer_id];
-    // Opportunity value estimation: 8% of their relationship value, minimum ₹25,000
-    const val = cust ? Math.max(cust.relationship_value * 0.08, 25000) : 35000;
-    return acc + val;
-  }, 0);
-
-  // Total estimated travel distance
-  const totalDistanceKm = filteredVisits
-    .filter(v => v.status !== 'COMPLETED')
-    .reduce((acc, v, idx) => {
-      const details = getTravelDetails(v.id, idx);
-      const val = parseFloat(details.dist.split(' ')[0]);
-      return acc + (isNaN(val) ? 0 : val);
-    }, 0);
-
-  // Total estimated travel time in minutes
-  const totalTimeMin = filteredVisits
-    .filter(v => v.status !== 'COMPLETED')
-    .reduce((acc, v, idx) => {
-      const details = getTravelDetails(v.id, idx);
-      const val = parseInt(details.time.split(' ')[0]);
-      return acc + (isNaN(val) ? 0 : val);
-    }, 0);
-
-  // Formatter for Currency
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val);
+  const handleSchedule = async () => {
+    setSubmitting(true);
+    await new Promise(r => setTimeout(r, 900));
+    const cust = DEMO_CUSTOMERS.find(c => c.id === newCustomerId)!;
+    const newVisit = {
+      id: `v${Date.now()}`,
+      customer_id: newCustomerId,
+      zrt_officer_id: activeUser?.id || 'u001',
+      purpose: newPurpose,
+      scheduled_at: new Date(newDate).toISOString(),
+      status: 'SCHEDULED',
+      geo_verified: false,
+      priority_score: Math.floor(60 + Math.random() * 35),
+      distance_km: parseFloat((2 + Math.random() * 8).toFixed(1)),
+      travel_mins: Math.floor(10 + Math.random() * 25),
+      opportunity_value: cust.relationship_value,
+      customer: cust,
+      coordinates: { lat: 13.08, lng: 80.27 },
+      address: `${cust.city}, ${cust.state}`,
+    };
+    setVisits(prev => [...prev, newVisit]);
+    setSubmitting(false);
+    setShowSchedule(false);
+    setNewPurpose('');
+    setNewDate('');
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Banner and Navigation */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* Header */}
+      <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-2xl font-extrabold text-navy">ZRT Field Command Center</h1>
-          <p className="text-text-sub text-sm">
-            Optimize paths, execute geo-verified checklist runs, and schedule visits.
+          <h1 className="text-2xl font-extrabold text-[#16263A] tracking-tight">ZRT Command Center</h1>
+          <p className="text-[#6B7076] text-sm mt-1">
+            {todayVisits.length} visits scheduled · {completedToday} completed today
           </p>
         </div>
-
         <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl ${networkStatus === 'Online' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {networkStatus === 'Online' ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+            {networkStatus}
+          </div>
           <button
-            onClick={handleRefresh}
-            className="p-2.5 border border-border-warm bg-surface hover:bg-bg-warm text-text-main rounded-xl transition duration-150 flex items-center gap-2 text-sm font-semibold"
-            title="Refresh visits data"
+            onClick={() => setShowSchedule(true)}
+            className="flex items-center gap-2 bg-[#16263A] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#16263A]/90 transition-all"
           >
-            <RefreshCw className="w-4 h-4 text-text-sub" />
-            <span>Sync</span>
-          </button>
-          
-          <button
-            onClick={() => setShowScheduleModal(true)}
-            className="px-4 py-2.5 bg-navy hover:bg-navy/90 text-white font-bold rounded-xl transition duration-150 flex items-center gap-2 text-sm shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Schedule Visit</span>
+            <Plus className="w-3.5 h-3.5" /> Schedule Visit
           </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="premium-card bg-surface flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-yellow-acc/10 flex items-center justify-center text-orange-acc shrink-0">
-            <Calendar className="w-6 h-6" />
+      {/* Summary KPI Strip */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: 'Scheduled', value: visits.filter(v => v.status === 'SCHEDULED').length, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: 'Completed', value: completedToday, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Opportunity Value', value: formatINR(todayVisits.reduce((s: number, v: any) => s + (v.opportunity_value || 0), 0)), color: 'text-[#F4A623]', bg: 'bg-amber-50' },
+          { label: 'Avg Priority Score', value: Math.round(todayVisits.reduce((s: number, v: any) => s + (v.priority_score || 0), 0) / Math.max(todayVisits.length, 1)), color: 'text-purple-600', bg: 'bg-purple-50' },
+        ].map(k => (
+          <div key={k.label} className={`${k.bg} rounded-2xl p-4`}>
+            <p className="text-[10px] font-bold text-[#6B7076] uppercase mb-1">{k.label}</p>
+            <p className={`text-xl font-extrabold ${k.color}`}>{k.value}</p>
           </div>
-          <div>
-            <div className="text-[10px] text-text-sub uppercase font-extrabold tracking-wide">Visits Planned</div>
-            <div className="text-2xl font-extrabold text-navy">{totalVisitsCount}</div>
-            <div className="text-[10px] text-success-acc font-semibold flex items-center gap-1 mt-0.5">
-              <span>{scheduledCount} scheduled • {inProgressCount} active</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="premium-card bg-surface flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-yellow-acc/10 flex items-center justify-center text-orange-acc shrink-0">
-            <Compass className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-[10px] text-text-sub uppercase font-extrabold tracking-wide">Total Distance</div>
-            <div className="text-2xl font-extrabold text-navy">
-              {totalDistanceKm.toFixed(1)} km
-            </div>
-            <div className="text-[10px] text-text-sub font-semibold mt-0.5">
-              Est. Travel: ~{totalTimeMin} minutes
-            </div>
-          </div>
-        </div>
-
-        <div className="premium-card bg-surface flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-yellow-acc/10 flex items-center justify-center text-success-acc shrink-0">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-[10px] text-text-sub uppercase font-extrabold tracking-wide">Opp Potential</div>
-            <div className="text-2xl font-extrabold text-success-acc">
-              {formatCurrency(totalOpportunityLocked)}
-            </div>
-            <div className="text-[10px] text-text-sub font-semibold mt-0.5">
-              Based on lifecycle profiles
-            </div>
-          </div>
-        </div>
-
-        <div className="premium-card bg-surface flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-yellow-acc/10 flex items-center justify-center text-navy shrink-0">
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-[10px] text-text-sub uppercase font-extrabold tracking-wide">Runs Completed</div>
-            <div className="text-2xl font-extrabold text-navy">
-              {completedCount} / {totalVisitsCount}
-            </div>
-            <div className="text-[10px] text-text-sub font-semibold mt-0.5">
-              {totalVisitsCount > 0 ? Math.round((completedCount / totalVisitsCount) * 100) : 0}% Completion Rate
-            </div>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Main Two-Column View */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Scheduled Visit Queue */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="premium-card bg-surface">
-            {/* List Header controls */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-border-warm">
-              <h3 className="font-extrabold text-navy text-sm uppercase tracking-wide">Visits Checklist & Queue</h3>
-              
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <div className="relative flex-1 sm:flex-initial">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-sub" />
-                  <input
-                    type="text"
-                    placeholder="Search customer..."
-                    className="pl-9 pr-3 py-1.5 bg-bg-warm border border-border-warm rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-yellow-acc text-text-main w-full"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                
-                <select
-                  className="bg-bg-warm border border-border-warm rounded-xl px-2.5 py-1.5 text-xs text-text-main font-semibold focus:outline-none"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="ALL">All Status</option>
-                  <option value="SCHEDULED">Scheduled</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="COMPLETED">Completed</option>
-                </select>
-              </div>
-            </div>
+      {/* Route Map */}
+      <RouteMap visits={todayVisits.slice(0, 4)} />
 
-            {/* Visit Items List */}
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-text-sub gap-2">
-                <Loader2 className="w-8 h-8 animate-spin text-orange-acc" />
-                <span className="text-xs font-semibold">Fetching ZRT desk schedules...</span>
-              </div>
-            ) : filteredVisits.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-text-sub gap-2 text-center">
-                <AlertTriangle className="w-8 h-8 text-warm-gold" />
-                <span className="text-xs font-semibold">No visits found matching filters.</span>
-                <button
-                  onClick={() => setShowScheduleModal(true)}
-                  className="text-xs text-orange-acc font-bold hover:underline mt-1"
-                >
-                  Create one now
-                </button>
-              </div>
-            ) : (
-              <div className="divide-y divide-border-warm mt-2">
-                {filteredVisits.map((visit, idx) => {
-                  const cust = customers[visit.customer_id];
-                  const travel = getTravelDetails(visit.id, idx);
-                  const scheduledTimeStr = new Date(visit.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                  const scheduledDateStr = new Date(visit.scheduled_at).toLocaleDateString([], { month: 'short', day: 'numeric' });
-                  
-                  // Estimate value
-                  const optValue = cust ? Math.max(cust.relationship_value * 0.08, 25000) : 35000;
-
-                  return (
-                    <div key={visit.id} className="py-4 first:pt-2 last:pb-2 flex flex-col sm:flex-row gap-4 justify-between items-start">
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-navy text-sm hover:underline cursor-pointer" onClick={() => router.push(`/customers/${visit.customer_id}`)}>
-                            {cust ? cust.full_name : `Customer ID: ${visit.customer_id.substring(0, 8)}...`}
-                          </span>
-                          {cust && (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-yellow-acc/10 text-orange-acc border border-yellow-acc/20">
-                              {cust.segment}
-                            </span>
-                          )}
-                          
-                          {visit.sync_status === 'PENDING' && (
-                            <span className="px-1.5 py-0.5 rounded bg-orange-acc/10 border border-orange-acc/20 text-orange-acc text-[8px] font-bold">
-                              Draft
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Purpose of visit */}
-                        <div className="text-xs text-text-main font-semibold flex items-center gap-1">
-                          <Compass className="w-3.5 h-3.5 text-text-sub shrink-0" />
-                          <span>{visit.purpose}</span>
-                        </div>
-
-                        {/* Scheduled time info */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-sub">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 shrink-0" />
-                            <span>{scheduledDateStr}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 shrink-0" />
-                            <span>{scheduledTimeStr}</span>
-                          </div>
-                          {visit.status !== 'COMPLETED' && (
-                            <div className="flex items-center gap-1 text-navy font-semibold">
-                              <Navigation className="w-3.5 h-3.5 text-orange-acc shrink-0 animate-pulse" />
-                              <span>{travel.dist} away ({travel.time})</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Value / Location details */}
-                        <div className="flex items-center gap-4 text-xs">
-                          <div className="flex items-center gap-1 font-semibold text-success-acc">
-                            <DollarSign className="w-3.5 h-3.5 shrink-0" />
-                            <span>Opp Value: {formatCurrency(optValue)}</span>
-                          </div>
-                          {cust && (
-                            <div className="text-text-sub">
-                              Location: <span className="font-semibold text-navy">{cust.city}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Status Badge & Action buttons */}
-                      <div className="flex flex-col sm:items-end gap-2 shrink-0 w-full sm:w-auto">
-                        {/* Status Badge */}
-                        <div>
-                          {visit.status === 'SCHEDULED' && (
-                            <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-yellow-acc/10 text-orange-acc border border-yellow-acc/30">
-                              Scheduled
-                            </span>
-                          )}
-                          {visit.status === 'IN_PROGRESS' && (
-                            <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-orange-acc/10 text-orange-acc border border-orange-acc/30 animate-pulse">
-                              In Progress
-                            </span>
-                          )}
-                          {visit.status === 'COMPLETED' && (
-                            <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-success-acc/10 text-success-acc border border-success-acc/30">
-                              Completed
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Execution Action Button */}
-                        {visit.status !== 'COMPLETED' ? (
-                          <button
-                            onClick={() => router.push(`/zrt/visits/${visit.id}`)}
-                            className={`w-full sm:w-auto px-3.5 py-1.5 text-xs font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 ${
-                              visit.status === 'IN_PROGRESS'
-                                ? 'bg-orange-acc hover:bg-orange-acc/90 text-white'
-                                : 'bg-navy hover:bg-navy/90 text-white'
-                            }`}
-                          >
-                            <span>{visit.status === 'IN_PROGRESS' ? 'Resume Execution' : 'Check-In & Execute'}</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </button>
-                        ) : (
-                          <div className="text-xs text-text-sub font-bold flex items-center gap-1 mt-1">
-                            <CheckCircle className="w-4 h-4 text-success-acc" />
-                            <span>Run Finished</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+      {/* Search & Filter */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#6B7076]" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search visits by customer or purpose..."
+            className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-medium text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]"
+          />
         </div>
-
-        {/* Right Column: Abstract Map Panel */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="premium-card bg-surface orbital-motif flex flex-col justify-between h-[520px]">
-            <div>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-extrabold text-navy text-sm uppercase tracking-wide flex items-center gap-1.5">
-                    <Map className="w-4 h-4 text-orange-acc" />
-                    <span>Officer Mobilization Route</span>
-                  </h3>
-                  <p className="text-[11px] text-text-sub">Real-time mock GPS telemetry & route layout</p>
-                </div>
-                <div className="px-2 py-0.5 rounded-full text-[9px] bg-success-acc/15 text-success-acc font-extrabold tracking-wider uppercase border border-success-acc/20">
-                  GPS Active
-                </div>
-              </div>
-
-              {/* Simulated Map Visual panel */}
-              <div className="relative w-full h-[320px] bg-bg-warm border border-border-warm rounded-2xl mt-4 overflow-hidden shadow-inner">
-                {/* SVG representing streets and nodes */}
-                <svg className="w-full h-full" viewBox="0 0 400 300">
-                  <defs>
-                    <radialGradient id="hubGrad" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stopColor="#FFD51F" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#FFD51F" stopOpacity="0" />
-                    </radialGradient>
-                  </defs>
-
-                  {/* Grid Lines */}
-                  <g stroke="#E8DAAE" strokeWidth="0.5" strokeDasharray="3,3" opacity="0.6">
-                    <line x1="50" y1="0" x2="50" y2="300" />
-                    <line x1="100" y1="0" x2="100" y2="300" />
-                    <line x1="150" y1="0" x2="150" y2="300" />
-                    <line x1="200" y1="0" x2="200" y2="300" />
-                    <line x1="250" y1="0" x2="250" y2="300" />
-                    <line x1="300" y1="0" x2="300" y2="300" />
-                    <line x1="350" y1="0" x2="350" y2="300" />
-                    <line x1="0" y1="50" x2="400" y2="50" />
-                    <line x1="0" y1="100" x2="400" y2="100" />
-                    <line x1="0" y1="150" x2="400" y2="150" />
-                    <line x1="0" y1="200" x2="400" y2="200" />
-                    <line x1="0" y1="250" x2="400" y2="250" />
-                  </g>
-
-                  {/* Streets representation lines */}
-                  <g stroke="#E8DAAE" strokeWidth="2" opacity="0.8">
-                    {/* Ring circles */}
-                    <circle cx="200" cy="150" r="120" fill="none" strokeWidth="1.5" strokeDasharray="4,4" />
-                    <circle cx="200" cy="150" r="70" fill="none" strokeWidth="1" />
-                    {/* Intersecting roads */}
-                    <line x1="40" y1="40" x2="360" y2="260" />
-                    <line x1="360" y1="40" x2="40" y2="260" />
-                    <line x1="200" y1="0" x2="200" y2="300" />
-                    <line x1="0" y1="150" x2="400" y2="150" />
-                  </g>
-
-                  {/* Highlight Path connecting Scheduled visits */}
-                  {filteredVisits.length >= 2 && (
-                    <polyline
-                      points="200,150 110,90 290,100 240,220 90,210"
-                      fill="none"
-                      stroke="#FF8A16"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeDasharray="6,4"
-                    />
-                  )}
-
-                  {/* Center Node: RM/ZRT Hub (Current Location) */}
-                  <circle cx="200" cy="150" r="18" fill="url(#hubGrad)" />
-                  <circle cx="200" cy="150" r="6" fill="#16263A" />
-                  <circle cx="200" cy="150" r="3" fill="#FFD51F" />
-                  <text x="200" y="138" fontSize="8" fontWeight="bold" textAnchor="middle" fill="#16263A">RM Hub</text>
-
-                  {/* Scheduled Customer Pins */}
-                  {filteredVisits.map((visit, idx) => {
-                    const cust = customers[visit.customer_id];
-                    // Static quadrant positions
-                    const positions = [
-                      { x: 110, y: 90 },
-                      { x: 290, y: 100 },
-                      { x: 240, y: 220 },
-                      { x: 90, y: 210 },
-                      { x: 310, y: 230 }
-                    ];
-                    const pos = positions[idx % positions.length];
-                    const isCompleted = visit.status === 'COMPLETED';
-                    const isActive = visit.status === 'IN_PROGRESS';
-                    const color = isCompleted ? '#2F8467' : (isActive ? '#FF8A16' : '#F4A623');
-
-                    return (
-                      <g key={visit.id} className="cursor-pointer" onClick={() => router.push(`/zrt/visits/${visit.id}`)}>
-                        {/* Outer Glow */}
-                        <circle cx={pos.x} cy={pos.y} r="10" fill={color} fillOpacity="0.25" className="animate-pulse" />
-                        {/* Pin Dot */}
-                        <circle cx={pos.x} cy={pos.y} r="5" fill={color} />
-                        {/* Label name */}
-                        <text x={pos.x} y={pos.y - 8} fontSize="7" fontWeight="extrabold" textAnchor="middle" fill="#16263A">
-                          {cust ? cust.full_name.split(' ')[0] : 'Visit'}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-
-                {/* Legend Overlay */}
-                <div className="absolute bottom-2.5 left-2.5 bg-surface/90 border border-border-warm rounded-xl p-2 text-[10px] space-y-1">
-                  <div className="font-bold text-navy pb-1">Legend</div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-navy"></span>
-                    <span className="text-text-main font-semibold">Your Location</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-gold"></span>
-                    <span className="text-text-main">Scheduled</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-orange-acc"></span>
-                    <span className="text-text-main">In Progress</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-success-acc"></span>
-                    <span className="text-text-main">Completed</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Travel stats footer */}
-            <div className="bg-bg-warm border border-border-warm rounded-2xl p-3 flex justify-between items-center text-xs">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-orange-acc" />
-                <div>
-                  <div className="font-bold text-navy">Optimal Path Loaded</div>
-                  <div className="text-[10px] text-text-sub">Sequenced for minimal fuel/time</div>
-                </div>
-              </div>
-              
-              <div className="text-right">
-                <span className="font-extrabold text-navy">{filteredVisits.filter(v => v.status !== 'COMPLETED').length} active runs</span>
-                <div className="text-[10px] text-text-sub">Next check-in pending</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {['ALL', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED'].map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all ${filter === f ? 'bg-[#16263A] text-white border-[#16263A]' : 'border-[#E8DAAE] text-[#6B7076] hover:border-[#16263A]'}`}
+          >
+            {f.replace('_', ' ')}
+          </button>
+        ))}
       </div>
 
-      {/* Schedule Visit Modal */}
-      {showScheduleModal && (
-        <div className="fixed inset-0 bg-navy/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-surface border border-border-warm rounded-2xl p-6 max-w-md w-full shadow-xl relative animate-in fade-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setShowScheduleModal(false)}
-              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-bg-warm text-text-sub hover:text-text-main transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      {/* Visit Cards */}
+      <div className="space-y-3">
+        {filtered.map((visit, idx) => (
+          <div key={visit.id} className={`bg-[#FFFDF7] border rounded-2xl p-5 ${visit.status === 'COMPLETED' ? 'border-emerald-200 opacity-80' : 'border-[#E8DAAE] hover:border-[#F4A623] hover:shadow-md'} transition-all`}>
+            <div className="flex items-start gap-4">
+              {/* Priority Badge */}
+              <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 ${visit.priority_score >= 85 ? 'bg-red-100 text-red-600' : visit.priority_score >= 70 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
+                <span className="text-lg font-extrabold leading-none">{idx + 1}</span>
+                <span className="text-[9px] font-bold">P{visit.priority_score}</span>
+              </div>
 
-            <h3 className="text-lg font-extrabold text-navy mb-4">Schedule Customer Visit</h3>
-            
-            <form onSubmit={handleScheduleVisit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Select Customer</label>
-                <select
-                  required
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-yellow-acc text-text-main"
-                  value={selectedCustomerId}
-                  onChange={(e) => setSelectedCustomerId(e.target.value)}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-3 mb-1">
+                  <div>
+                    <p className="font-extrabold text-[#16263A]">{visit.customer?.full_name}</p>
+                    <p className="text-xs text-[#6B7076]">{visit.customer?.segment} · {visit.address}</p>
+                  </div>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md shrink-0 ${STATUS_STYLES[visit.status]}`}>{visit.status.replace('_', ' ')}</span>
+                </div>
+
+                <p className="text-xs text-[#29313A] font-semibold mb-3">📋 {visit.purpose}</p>
+
+                <div className="flex flex-wrap gap-4 text-xs text-[#6B7076]">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(visit.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="flex items-center gap-1"><Navigation className="w-3 h-3" /> {visit.distance_km} km · {visit.travel_mins} min</span>
+                  <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> {formatINR(visit.opportunity_value)} opportunity</span>
+                  {visit.geo_verified && <span className="flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle className="w-3 h-3" /> Geo-verified</span>}
+                </div>
+
+                {visit.notes && (
+                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
+                    <p className="text-[10px] font-extrabold text-emerald-700 mb-1">VISIT NOTES</p>
+                    <p className="text-xs text-emerald-800">{visit.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Button */}
+              {visit.status !== 'COMPLETED' && (
+                <Link
+                  href={`/zrt/visits/${visit.id}`}
+                  className="flex items-center gap-1.5 bg-[#FFD51F] hover:bg-[#F4A623] text-[#16263A] text-xs font-extrabold px-3 py-2 rounded-xl shrink-0 transition-all"
                 >
-                  <option value="">-- Choose Customer --</option>
-                  {allCustomersList.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name} ({c.segment}) - {c.city}
-                    </option>
-                  ))}
+                  Start <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Schedule Modal */}
+      {showSchedule && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-extrabold text-[#16263A] mb-4">Schedule Field Visit</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Customer</label>
+                <select value={newCustomerId} onChange={e => setNewCustomerId(e.target.value)} className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-semibold text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]">
+                  {DEMO_CUSTOMERS.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
                 </select>
               </div>
-
               <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Purpose of Visit</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Need Assessment & Lead Generation"
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-yellow-acc text-text-main"
-                  value={visitPurpose}
-                  onChange={(e) => setVisitPurpose(e.target.value)}
-                />
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Purpose</label>
+                <input value={newPurpose} onChange={e => setNewPurpose(e.target.value)} placeholder="e.g. Monthly account review" className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-medium text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]" />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Date</label>
-                  <input
-                    type="date"
-                    required
-                    className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-yellow-acc text-text-main"
-                    value={visitDate}
-                    onChange={(e) => setVisitDate(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Time</label>
-                  <input
-                    type="time"
-                    required
-                    className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-yellow-acc text-text-main"
-                    value={visitTime}
-                    onChange={(e) => setVisitTime(e.target.value)}
-                  />
-                </div>
+              <div>
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Date & Time</label>
+                <input type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-medium text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]" />
               </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full py-2.5 bg-navy hover:bg-navy/90 text-white font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Scheduling...</span>
-                    </>
-                  ) : (
-                    <span>Schedule Field Run</span>
-                  )}
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setShowSchedule(false)} className="flex-1 py-2.5 rounded-xl border border-[#E8DAAE] text-xs font-bold text-[#6B7076] hover:bg-[#E8DAAE]/30 transition-all">Cancel</button>
+                <button onClick={handleSchedule} disabled={!newPurpose || !newDate || submitting} className="flex-1 py-2.5 rounded-xl bg-[#16263A] text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                  {submitting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Scheduling...</> : 'Schedule Visit'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

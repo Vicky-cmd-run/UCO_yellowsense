@@ -1,668 +1,215 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useDemoStore } from '../../../stores/demoStore';
-import { apiService } from '../../../services/api';
+import React, { useState } from 'react';
+import { DEMO_LEADS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
 import {
-  Briefcase, Plus, Search, Filter, RefreshCw, X, UserCheck,
-  Calendar, CheckCircle, AlertTriangle, Play, CheckCircle2,
-  DollarSign, ArrowRight, Kanban, ListFilter, ArrowLeftRight,
-  TrendingUp, Clock, HelpCircle, Loader2
+  Plus, Filter, LayoutGrid, List, ChevronRight, User,
+  TrendingUp, Clock, ArrowRight, CheckCircle, XCircle, Target
 } from 'lucide-react';
 
-interface LeadData {
-  id: string;
-  customer_id: string;
-  source: string;
-  product: string;
-  potential_value: number;
-  stage: string;
-  owner_id: string | null;
-  conversion_probability: number;
-  priority: string;
-  next_action: string | null;
-  next_action_due_at: string | null;
-  created_at: string;
-  customer_name?: string;
-}
+const STAGES = ['New', 'Contacted', 'In Progress', 'Proposal', 'Converted', 'Lost'];
 
-interface UserListItem {
-  id: string;
-  employee_id: string;
-  name: string;
-  role: string;
-}
+const STAGE_STYLES: Record<string, { bg: string; border: string; header: string; dot: string }> = {
+  'New': { bg: 'bg-slate-50', border: 'border-slate-200', header: 'bg-slate-100 text-slate-700', dot: 'bg-slate-400' },
+  'Contacted': { bg: 'bg-sky-50', border: 'border-sky-200', header: 'bg-sky-100 text-sky-700', dot: 'bg-sky-500' },
+  'In Progress': { bg: 'bg-amber-50', border: 'border-amber-200', header: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  'Proposal': { bg: 'bg-purple-50', border: 'border-purple-200', header: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
+  'Converted': { bg: 'bg-emerald-50', border: 'border-emerald-200', header: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+  'Lost': { bg: 'bg-red-50', border: 'border-red-200', header: 'bg-red-100 text-red-700', dot: 'bg-red-400' },
+};
 
-interface CustomerListItem {
-  id: string;
-  full_name: string;
-  segment: string;
-  city: string;
-}
+const formatINR = (v: number) => {
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)} Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)} L`;
+  return `₹${v.toLocaleString('en-IN')}`;
+};
 
-export default function LeadPipelinePage() {
-  const { networkStatus } = useDemoStore();
-  const [mounted, setMounted] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [leads, setLeads] = useState<LeadData[]>([]);
-  const [users, setUsers] = useState<UserListItem[]>([]);
-  const [customers, setCustomers] = useState<CustomerListItem[]>([]);
-
-  // View state
-  const [viewMode, setViewMode] = useState<'KANBAN' | 'TABLE'>('KANBAN');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [ownerFilter, setOwnerFilter] = useState('ALL');
-
-  // Modals state
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-
-  // Create Lead Form state
-  const [newCustomerId, setNewCustomerId] = useState('');
-  const [newSource, setNewSource] = useState('FIELD_VISIT');
+export default function LeadsPage() {
+  const [leads, setLeads] = useState(DEMO_LEADS);
+  const [view, setView] = useState<'kanban' | 'table'>('kanban');
+  const [showCreate, setShowCreate] = useState(false);
+  const [newCustomerId, setNewCustomerId] = useState(DEMO_CUSTOMERS[0].id);
   const [newProduct, setNewProduct] = useState('');
   const [newValue, setNewValue] = useState('');
-  const [newOwnerId, setNewOwnerId] = useState('');
-  const [submittingLead, setSubmittingLead] = useState(false);
+  const [newSource, setNewSource] = useState('RM');
+  const [movingLead, setMovingLead] = useState<string | null>(null);
 
-  // Follow-up Form state
-  const [followUpText, setFollowUpText] = useState('');
-  const [followUpDate, setFollowUpDate] = useState('');
-  const [submittingFollowUp, setSubmittingFollowUp] = useState(false);
+  const stageLeads = (stage: string) => leads.filter(l => l.stage === stage);
+  const stageTotal = (stage: string) => stageLeads(stage).reduce((s, l) => s + l.potential_value, 0);
 
-  // Pipeline Stages
-  const stages = ['New', 'Contacted', 'In-Progress', 'Proposal', 'Converted', 'Lost'];
-
-  // Load all workspace parameters
-  const loadWorkspaceData = async () => {
-    setLoading(true);
-    try {
-      const [leadsData, usersData, customersData] = await Promise.all([
-        apiService.fetchLeads(),
-        apiService.fetchUsers(),
-        apiService.fetchCustomers()
-      ]);
-      setLeads(leadsData);
-      setUsers(usersData);
-      setCustomers(customersData);
-    } catch (err) {
-      console.error('Failed to load lead desk data', err);
-    } finally {
-      setLoading(false);
-    }
+  const moveStage = (leadId: string, newStage: string) => {
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: newStage } : l));
+    setMovingLead(null);
   };
 
-  useEffect(() => {
-    setMounted(true);
-    loadWorkspaceData();
-  }, [networkStatus]);
-
-  // Handle stage change
-  const handleStageChange = async (leadId: string, targetStage: string) => {
-    // Optimistic UI update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: targetStage } : l));
-    try {
-      await apiService.updateLeadStage(leadId, targetStage);
-    } catch (err: any) {
-      console.error(err);
-      alert('Failed to update stage on server, rolling back...');
-      loadWorkspaceData();
-    }
+  const handleCreate = () => {
+    const cust = DEMO_CUSTOMERS.find(c => c.id === newCustomerId)!;
+    const newLead = {
+      id: `l${Date.now()}`,
+      customer_id: newCustomerId,
+      customer_name: cust.full_name,
+      source: newSource,
+      product: newProduct,
+      potential_value: parseFloat(newValue) * 100000 || 1000000,
+      stage: 'New',
+      priority: 'MEDIUM',
+      conversion_probability: 60,
+      owner_id: 'u002',
+      owner_name: 'Priya Nair',
+      created_at: new Date().toISOString(),
+      segment: cust.segment,
+    };
+    setLeads(prev => [newLead, ...prev]);
+    setShowCreate(false);
+    setNewProduct('');
+    setNewValue('');
   };
-
-  // Handle owner assignment
-  const handleOwnerChange = async (leadId: string, targetOwnerId: string) => {
-    // Optimistic UI update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, owner_id: targetOwnerId || null } : l));
-    try {
-      await apiService.assignLeadOwner(leadId, targetOwnerId);
-      alert('Lead successfully re-routed!');
-    } catch (err: any) {
-      console.error(err);
-      alert('Failed to re-route owner: ' + err.message);
-      loadWorkspaceData();
-    }
-  };
-
-  // Handle schedule follow-up
-  const handleScheduleFollowUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLeadId || !followUpText || !followUpDate) return;
-    setSubmittingFollowUp(true);
-
-    try {
-      // Mock follow-up patch on frontend client
-      setLeads(prev => prev.map(l => {
-        if (l.id === selectedLeadId) {
-          return {
-            ...l,
-            next_action: followUpText,
-            next_action_due_at: new Date(followUpDate).toISOString()
-          };
-        }
-        return l;
-      }));
-
-      // Simulate API lag
-      await new Promise(r => setTimeout(r, 600));
-
-      setShowFollowUpModal(false);
-      setSelectedLeadId(null);
-      setFollowUpText('');
-      setFollowUpDate('');
-      alert('Follow-up activity successfully registered!');
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSubmittingFollowUp(false);
-    }
-  };
-
-  // Create lead submission
-  const handleCreateLead = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCustomerId || !newProduct || !newValue) {
-      alert('Please fill out required fields');
-      return;
-    }
-
-    setSubmittingLead(true);
-    try {
-      const val = parseFloat(newValue);
-      const owner = newOwnerId || null;
-      await apiService.createLead(newCustomerId, newSource, newProduct, isNaN(val) ? 50000 : val, owner);
-      
-      setShowCreateModal(false);
-      setNewCustomerId('');
-      setNewProduct('');
-      setNewValue('');
-      setNewOwnerId('');
-      
-      // Reload leads
-      loadWorkspaceData();
-    } catch (err: any) {
-      console.error(err);
-      alert('Failed to ingest lead: ' + err.message);
-    } finally {
-      setSubmittingLead(false);
-    }
-  };
-
-  // Filter leads
-  const filteredLeads = leads.filter((lead) => {
-    const custName = lead.customer_name?.toLowerCase() || '';
-    const prodName = lead.product?.toLowerCase() || '';
-    const matchesSearch = custName.includes(searchQuery.toLowerCase()) || prodName.includes(searchQuery.toLowerCase());
-    
-    if (ownerFilter === 'ALL') return matchesSearch;
-    if (ownerFilter === 'UNASSIGNED') return !lead.owner_id && matchesSearch;
-    return lead.owner_id === ownerFilter && matchesSearch;
-  });
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val);
-  };
-
-  if (!mounted) return null;
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* Header */}
+      <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-2xl font-extrabold text-navy">Opportunity Lead Pipeline</h1>
-          <p className="text-text-sub text-sm">
-            Nurture pre-approved limits, manage drag-routing assignments, and track follow-up activities.
-          </p>
+          <h1 className="text-2xl font-extrabold text-[#16263A] tracking-tight">Lead Pipeline</h1>
+          <p className="text-[#6B7076] text-sm mt-1">{leads.length} leads · {formatINR(leads.filter(l => l.stage !== 'Lost').reduce((s, l) => s + l.potential_value, 0))} total potential value</p>
         </div>
-
         <div className="flex items-center gap-2">
-          {/* View switcher */}
-          <div className="flex bg-surface border border-border-warm rounded-xl p-1">
-            <button
-              onClick={() => setViewMode('KANBAN')}
-              className={`p-2 rounded-lg transition ${
-                viewMode === 'KANBAN' ? 'bg-yellow-acc/15 text-orange-acc' : 'text-text-sub hover:text-text-main'
-              }`}
-              title="Kanban Board view"
-            >
-              <Kanban className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('TABLE')}
-              className={`p-2 rounded-lg transition ${
-                viewMode === 'TABLE' ? 'bg-yellow-acc/15 text-orange-acc' : 'text-text-sub hover:text-text-main'
-              }`}
-              title="Table view"
-            >
-              <ListFilter className="w-4 h-4" />
-            </button>
-          </div>
-
-          <button
-            onClick={loadWorkspaceData}
-            className="p-2.5 border border-border-warm bg-surface hover:bg-bg-warm text-text-main rounded-xl transition duration-150 flex items-center gap-2 text-sm font-semibold"
-          >
-            <RefreshCw className="w-4 h-4 text-text-sub" />
-            <span>Sync Board</span>
+          <button onClick={() => setView('kanban')} className={`p-2 rounded-xl border text-xs font-bold transition-all ${view === 'kanban' ? 'bg-[#16263A] text-white border-[#16263A]' : 'border-[#E8DAAE] text-[#6B7076]'}`}>
+            <LayoutGrid className="w-4 h-4" />
           </button>
-          
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2.5 bg-navy hover:bg-navy/90 text-white font-bold rounded-xl transition duration-150 flex items-center gap-2 text-sm shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Ingest Lead</span>
+          <button onClick={() => setView('table')} className={`p-2 rounded-xl border text-xs font-bold transition-all ${view === 'table' ? 'bg-[#16263A] text-white border-[#16263A]' : 'border-[#E8DAAE] text-[#6B7076]'}`}>
+            <List className="w-4 h-4" />
+          </button>
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-[#16263A] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#16263A]/90 transition-all">
+            <Plus className="w-3.5 h-3.5" /> Add Lead
           </button>
         </div>
       </div>
 
-      {/* Filter Options Desk */}
-      <div className="premium-card bg-surface flex flex-wrap gap-4 items-center justify-between py-3.5">
-        <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
-          <div className="relative w-full md:w-64">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-sub" />
-            <input
-              type="text"
-              placeholder="Search customer or product..."
-              className="pl-8 pr-3 py-1.5 bg-bg-warm border border-border-warm rounded-xl text-xs focus:outline-none w-full text-text-main font-semibold"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          <select
-            className="bg-bg-warm border border-border-warm rounded-xl px-2.5 py-1.5 text-xs text-text-main font-semibold focus:outline-none"
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-          >
-            <option value="ALL">All Owners</option>
-            <option value="UNASSIGNED">Unassigned</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="text-xs text-text-sub font-semibold">
-          Showing <span className="font-bold text-navy">{filteredLeads.length}</span> active pipelines
-        </div>
-      </div>
-
-      {/* VIEW PANEL */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 text-text-sub gap-2">
-          <Loader2 className="w-8 h-8 animate-spin text-orange-acc" />
-          <span className="text-xs font-semibold">Loading pipeline desks...</span>
-        </div>
-      ) : viewMode === 'KANBAN' ? (
-        /* KANBAN BOARD */
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin">
-          {stages.map((stage) => {
-            const stageLeads = filteredLeads.filter(l => l.stage === stage);
-            
+      {/* KANBAN VIEW */}
+      {view === 'kanban' && (
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {STAGES.map(stage => {
+            const style = STAGE_STYLES[stage];
+            const stageLds = stageLeads(stage);
             return (
-              <div key={stage} className="w-72 shrink-0 flex flex-col bg-bg-warm/40 border border-border-warm rounded-2xl p-3 h-[600px]">
-                {/* Stage header */}
-                <div className="flex justify-between items-center pb-2 mb-3 border-b border-border-warm">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-extrabold text-navy text-xs uppercase tracking-wide">{stage}</span>
-                    <span className="px-1.5 py-0.5 rounded-full bg-navy/5 text-navy text-[10px] font-bold">
-                      {stageLeads.length}
-                    </span>
+              <div key={stage} className={`shrink-0 w-72 rounded-2xl border ${style.border} overflow-hidden`}>
+                {/* Column Header */}
+                <div className={`p-3 ${style.header} flex items-center justify-between`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${style.dot}`} />
+                    <span className="text-xs font-extrabold uppercase tracking-wider">{stage}</span>
                   </div>
-                  
-                  <span className="text-[10px] font-bold text-success-acc">
-                    {formatCurrency(stageLeads.reduce((acc, l) => acc + l.potential_value, 0))}
-                  </span>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold">{stageLds.length} leads</span>
+                    {stageLds.length > 0 && <p className="text-[10px]">{formatINR(stageTotal(stage))}</p>}
+                  </div>
                 </div>
 
-                {/* Cards Container */}
-                <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                  {stageLeads.length === 0 ? (
-                    <div className="h-28 border border-dashed border-border-warm rounded-2xl flex items-center justify-center text-[10px] text-text-sub italic">
-                      No leads in {stage}
-                    </div>
-                  ) : (
-                    stageLeads.map((lead) => {
-                      const owner = users.find(u => u.id === lead.owner_id);
-                      
-                      return (
-                        <div key={lead.id} className="bg-surface border border-border-warm rounded-2xl p-3.5 space-y-3 shadow-xs hover:shadow-md transition">
-                          <div>
-                            <div className="font-extrabold text-navy text-xs truncate">
-                              {lead.customer_name || 'Prospect'}
-                            </div>
-                            <div className="text-[10px] text-text-sub font-semibold mt-0.5">
-                              Product: <span className="text-navy">{lead.product}</span>
-                            </div>
-                          </div>
-
-                          {/* Value & probability info */}
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-extrabold text-success-acc">
-                              {formatCurrency(lead.potential_value)}
-                            </span>
-                            <span className="font-semibold text-navy">
-                              {Math.round(lead.conversion_probability)}% probability
-                            </span>
-                          </div>
-
-                          {/* Next follow up info */}
-                          <div className="bg-bg-warm/60 border border-border-warm rounded-xl p-2 text-[10px] flex justify-between items-center">
-                            <div className="min-w-0 pr-1.5">
-                              <div className="text-text-sub font-semibold">Next Follow-Up</div>
-                              <div className="text-navy font-bold truncate mt-0.5">
-                                {lead.next_action || 'Not scheduled'}
-                              </div>
-                            </div>
+                {/* Cards */}
+                <div className={`p-2 space-y-2 min-h-[100px] ${style.bg}`}>
+                  {stageLds.length === 0 ? (
+                    <div className="text-center py-6 text-[10px] text-[#6B7076] font-semibold">No leads in this stage</div>
+                  ) : stageLds.map(lead => (
+                    <div key={lead.id} className="bg-white border border-[#E8DAAE] rounded-xl p-3 shadow-sm hover:shadow-md transition-all">
+                      <p className="text-xs font-extrabold text-[#16263A] line-clamp-1">{lead.customer_name}</p>
+                      <p className="text-[10px] text-[#6B7076] mb-1 line-clamp-1">{lead.product}</p>
+                      <p className="text-sm font-extrabold text-[#F4A623]">{formatINR(lead.potential_value)}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${lead.priority === 'HIGH' ? 'bg-red-100 text-red-600' : lead.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
+                          {lead.priority}
+                        </span>
+                        <span className="text-[10px] text-[#6B7076] font-semibold">{lead.conversion_probability}% conv.</span>
+                      </div>
+                      {/* Stage Mover */}
+                      {stage !== 'Converted' && stage !== 'Lost' && (
+                        <div className="mt-2 pt-2 border-t border-[#E8DAAE] flex gap-1">
+                          {STAGES.filter(s => s !== stage && s !== 'Lost').slice(0, 2).map(nextStage => (
                             <button
-                              onClick={() => {
-                                setSelectedLeadId(lead.id);
-                                setShowFollowUpModal(true);
-                              }}
-                              className="p-1 hover:bg-yellow-acc/10 text-orange-acc rounded transition shrink-0"
-                              title="Schedule Action"
+                              key={nextStage}
+                              onClick={() => moveStage(lead.id, nextStage)}
+                              className="flex-1 text-[9px] font-bold bg-[#FFF9ED] border border-[#E8DAAE] text-[#16263A] hover:bg-[#E8DAAE] px-1.5 py-1 rounded-lg transition-all truncate"
                             >
-                              <Calendar className="w-3.5 h-3.5" />
+                              → {nextStage}
                             </button>
-                          </div>
-
-                          {/* Owner Router dropdown */}
-                          <div className="space-y-1">
-                            <div className="text-[8px] text-text-sub uppercase font-bold tracking-wider">Owner / Re-Route</div>
-                            <select
-                              className="w-full bg-bg-warm border border-border-warm rounded-lg px-2 py-1 text-[10px] text-text-main font-semibold focus:outline-none"
-                              value={lead.owner_id || ''}
-                              onChange={(e) => handleOwnerChange(lead.id, e.target.value)}
-                            >
-                              <option value="">Unassigned</option>
-                              {users.map(u => (
-                                <option key={u.id} value={u.id}>{u.name}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Stage routing buttons */}
-                          <div className="flex justify-between items-center pt-2 border-t border-border-warm/40">
-                            <div className="text-[8px] text-text-sub uppercase font-bold tracking-wider">Update Stage</div>
-                            <div className="flex gap-1">
-                              {stages.map((stg) => {
-                                if (stg === lead.stage) return null;
-                                return (
-                                  <button
-                                    key={stg}
-                                    onClick={() => handleStageChange(lead.id, stg)}
-                                    className="px-1.5 py-0.5 bg-bg-warm hover:bg-yellow-acc/10 border border-border-warm hover:border-yellow-acc text-[8px] font-extrabold rounded text-navy transition"
-                                    title={`Move to ${stg}`}
-                                  >
-                                    {stg[0]}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                          ))}
+                          <button onClick={() => moveStage(lead.id, 'Lost')} className="text-[9px] font-bold text-red-500 hover:bg-red-50 px-1.5 py-1 rounded-lg transition-all border border-transparent hover:border-red-200">✕</button>
                         </div>
-                      );
-                    })
-                  )}
+                      )}
+                      <p className="text-[10px] text-[#6B7076] mt-1.5">{lead.owner_name} · {lead.source}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             );
           })}
         </div>
-      ) : (
-        /* TABLE VIEW GRID */
-        <div className="premium-card bg-surface overflow-x-auto p-0">
-          <table className="w-full text-left border-collapse text-xs">
+      )}
+
+      {/* TABLE VIEW */}
+      {view === 'table' && (
+        <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl overflow-hidden">
+          <table className="w-full text-sm">
             <thead>
-              <tr className="bg-bg-warm border-b border-border-warm text-navy font-bold">
-                <th className="p-3.5">Customer Name</th>
-                <th className="p-3.5">Product opportunity</th>
-                <th className="p-3.5">Source Channel</th>
-                <th className="p-3.5">Potential Value</th>
-                <th className="p-3.5">Probability</th>
-                <th className="p-3.5">Pipeline Stage</th>
-                <th className="p-3.5">Owner RM</th>
-                <th className="p-3.5">Next Action</th>
+              <tr className="border-b border-[#E8DAAE] bg-[#FFF9ED]">
+                {['Customer', 'Product', 'Value', 'Stage', 'Priority', 'Probability', 'Owner', 'Source'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-[10px] font-extrabold text-[#6B7076] uppercase tracking-wider">{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-border-warm">
-              {filteredLeads.map((lead) => {
-                const owner = users.find(u => u.id === lead.owner_id);
-                return (
-                  <tr key={lead.id} className="hover:bg-bg-warm/30 transition text-text-main font-medium">
-                    <td className="p-3.5 font-bold text-navy">{lead.customer_name || 'Prospect'}</td>
-                    <td className="p-3.5">{lead.product}</td>
-                    <td className="p-3.5">
-                      <span className="px-2 py-0.5 rounded bg-bg-warm border border-border-warm text-[10px] font-bold text-text-sub uppercase">
-                        {lead.source.replace(/_/g, ' ')}
-                      </span>
-                    </td>
-                    <td className="p-3.5 font-extrabold text-success-acc">{formatCurrency(lead.potential_value)}</td>
-                    <td className="p-3.5">{Math.round(lead.conversion_probability)}%</td>
-                    <td className="p-3.5">
-                      <select
-                        className="bg-bg-warm border border-border-warm rounded-xl px-2 py-1 text-xs text-text-main font-semibold focus:outline-none"
-                        value={lead.stage}
-                        onChange={(e) => handleStageChange(lead.id, e.target.value)}
-                      >
-                        {stages.map(stg => (
-                          <option key={stg} value={stg}>{stg}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-3.5">
-                      <select
-                        className="bg-bg-warm border border-border-warm rounded-xl px-2 py-1 text-xs text-text-main font-semibold focus:outline-none"
-                        value={lead.owner_id || ''}
-                        onChange={(e) => handleOwnerChange(lead.id, e.target.value)}
-                      >
-                        <option value="">Unassigned</option>
-                        {users.map(u => (
-                          <option key={u.id} value={u.id}>{u.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate max-w-[120px] font-bold">{lead.next_action || 'None scheduled'}</span>
-                        <button
-                          onClick={() => {
-                            setSelectedLeadId(lead.id);
-                            setShowFollowUpModal(true);
-                          }}
-                          className="text-orange-acc hover:underline font-bold"
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+            <tbody className="divide-y divide-[#E8DAAE]">
+              {leads.map(lead => (
+                <tr key={lead.id} className="hover:bg-[#FFF9ED] transition-colors">
+                  <td className="px-4 py-3 font-bold text-[#16263A] text-xs">{lead.customer_name}</td>
+                  <td className="px-4 py-3 text-xs text-[#29313A]">{lead.product}</td>
+                  <td className="px-4 py-3 font-extrabold text-[#F4A623] text-xs">{formatINR(lead.potential_value)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${STAGE_STYLES[lead.stage]?.header || 'bg-gray-100 text-gray-600'}`}>{lead.stage}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${lead.priority === 'HIGH' ? 'bg-red-100 text-red-600' : lead.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>{lead.priority}</span>
+                  </td>
+                  <td className="px-4 py-3 text-xs font-bold text-[#16263A]">{lead.conversion_probability}%</td>
+                  <td className="px-4 py-3 text-xs text-[#6B7076]">{lead.owner_name}</td>
+                  <td className="px-4 py-3 text-xs text-[#6B7076]">{lead.source}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Ingest Lead Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-navy/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-surface border border-border-warm rounded-2xl p-6 max-w-md w-full shadow-xl relative">
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-bg-warm text-text-sub hover:text-text-main transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-lg font-extrabold text-navy mb-4">Ingest Opportunity Lead</h3>
-            
-            <form onSubmit={handleCreateLead} className="space-y-4">
+      {/* Create Lead Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-extrabold text-[#16263A] mb-4">Add New Lead</h3>
+            <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Select Customer</label>
-                <select
-                  required
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                  value={newCustomerId}
-                  onChange={(e) => setNewCustomerId(e.target.value)}
-                >
-                  <option value="">-- Choose Customer --</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name} ({c.segment}) - {c.city}
-                    </option>
-                  ))}
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Customer</label>
+                <select value={newCustomerId} onChange={e => setNewCustomerId(e.target.value)} className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-semibold text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]">
+                  {DEMO_CUSTOMERS.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
                 </select>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Source Channel</label>
-                  <select
-                    className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                    value={newSource}
-                    onChange={(e) => setNewSource(e.target.value)}
-                  >
-                    <option value="FIELD_VISIT">Field Visit</option>
-                    <option value="TELEPHONE">Telephone call</option>
-                    <option value="EMAIL">Email Marketing</option>
-                    <option value="REFERRAL">Referral Campaign</option>
-                    <option value="INBOUND">Inbound Inquiry</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Owner RM</label>
-                  <select
-                    className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                    value={newOwnerId}
-                    onChange={(e) => setNewOwnerId(e.target.value)}
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Cross-Sell Product</label>
-                <select
-                  required
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                  value={newProduct}
-                  onChange={(e) => setNewProduct(e.target.value)}
-                >
-                  <option value="">-- Select Product --</option>
-                  <option value="Working Capital Loan">Working Capital Loan</option>
-                  <option value="Term Loan - Business Expansion">Term Loan - Business Expansion</option>
-                  <option value="POS QR Merchant Stand">POS QR Merchant Stand</option>
-                  <option value="Salary Premium Accounts bundle">Salary Premium Accounts bundle</option>
-                  <option value="Commercial Business Insurance">Commercial Business Insurance</option>
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Product</label>
+                <input value={newProduct} onChange={e => setNewProduct(e.target.value)} placeholder="e.g. MSME Expansion Loan" className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-medium text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Potential Value (₹ Lakhs)</label>
+                <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} placeholder="e.g. 25" className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-medium text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#6B7076] block mb-1">Source</label>
+                <select value={newSource} onChange={e => setNewSource(e.target.value)} className="w-full p-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-semibold text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F]">
+                  {['RM', 'ZRT', 'VRM', 'Campaign', 'Referral', 'Branch Walk-in'].map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Potential Opportunity Value (INR)</label>
-                <input
-                  type="number"
-                  required
-                  placeholder="e.g. 250000"
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                  value={newValue}
-                  onChange={(e) => setNewValue(e.target.value)}
-                />
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-xl border border-[#E8DAAE] text-xs font-bold text-[#6B7076] hover:bg-[#E8DAAE]/30 transition-all">Cancel</button>
+                <button onClick={handleCreate} disabled={!newProduct || !newValue} className="flex-1 py-2.5 rounded-xl bg-[#16263A] text-white text-xs font-bold disabled:opacity-50 transition-all">Add Lead</button>
               </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={submittingLead}
-                  className="w-full py-2.5 bg-navy hover:bg-navy/90 text-white font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2"
-                >
-                  {submittingLead ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Saving Lead...</span>
-                    </>
-                  ) : (
-                    <span>Add to Pipeline Board</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Schedule Follow-up Modal */}
-      {showFollowUpModal && (
-        <div className="fixed inset-0 bg-navy/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-surface border border-border-warm rounded-2xl p-6 max-w-sm w-full shadow-xl relative">
-            <button
-              onClick={() => {
-                setShowFollowUpModal(false);
-                setSelectedLeadId(null);
-              }}
-              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-bg-warm text-text-sub hover:text-text-main transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-base font-extrabold text-navy mb-4 flex items-center gap-1.5">
-              <Calendar className="w-5 h-5 text-orange-acc" />
-              <span>Schedule Next Action Task</span>
-            </h3>
-
-            <form onSubmit={handleScheduleFollowUp} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Action reminder note</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Call customer to review GST filings"
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                  value={followUpText}
-                  onChange={(e) => setFollowUpText(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1">Target date</label>
-                <input
-                  type="date"
-                  required
-                  className="w-full px-3 py-2 bg-bg-warm border border-border-warm rounded-xl text-sm focus:outline-none text-text-main font-semibold"
-                  value={followUpDate}
-                  onChange={(e) => setFollowUpDate(e.target.value)}
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={submittingFollowUp}
-                  className="w-full py-2 bg-navy hover:bg-navy/90 text-white font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2"
-                >
-                  {submittingFollowUp ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Scheduling...</span>
-                    </>
-                  ) : (
-                    <span>Save Task Activity</span>
-                  )}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

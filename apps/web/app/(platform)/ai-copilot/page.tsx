@@ -1,20 +1,8 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { apiService } from '../../../services/api';
-import {
-  Bot, Send, User, Sparkles, AlertCircle, RefreshCw, CheckCircle,
-  HelpCircle, ChevronRight, Layers, FileText, BarChart2, ShieldAlert
-} from 'lucide-react';
-
-interface Customer {
-  id: string;
-  full_name: string;
-  customer_number: string;
-  segment: string;
-  relationship_value: number;
-  churn_risk: number;
-}
+import React, { useState, useRef, useEffect } from 'react';
+import { DEMO_CUSTOMERS, COPILOT_RESPONSES } from '@/services/DEMO_DATA';
+import { Bot, Send, User, Sparkles, ChevronRight, Layers, BarChart2, ShieldAlert, MessageSquare } from 'lucide-react';
 
 interface Message {
   sender: 'bot' | 'user';
@@ -24,380 +12,212 @@ interface Message {
   sources?: string[];
 }
 
-export default function AICopilotPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const SUGGESTED_PROMPTS = [
+  'Which customers are at highest churn risk?',
+  'What are the top Next Best Actions for my portfolio?',
+  'Show me the lead pipeline status',
+  'Tell me about Kumar Textiles',
+  'Which customers have low digital engagement scores?',
+  'What is the analytics performance this quarter?',
+];
 
+function simulateResponse(input: string): { text: string; confidence: number; sources: string[] } {
+  const lower = input.toLowerCase();
+  for (const resp of COPILOT_RESPONSES) {
+    if (resp.keywords.some(kw => lower.includes(kw))) {
+      return { text: resp.response, confidence: resp.confidence, sources: resp.sources };
+    }
+  }
+  return {
+    text: `I've analyzed your query about "${input.slice(0, 60)}${input.length > 60 ? '...' : ''}". Based on the current portfolio data, I recommend reviewing the Customer 360 profiles for specific context. You can navigate to any customer profile for AI-powered next-best-action recommendations tailored to that relationship.`,
+    confidence: 71,
+    sources: ['Customer 360 Engine', 'Portfolio Analytics'],
+  };
+}
+
+function formatMarkdown(text: string) {
+  // Bold **text**
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-extrabold text-[#16263A]">{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+export default function AICopilotPage() {
+  const [selectedId, setSelectedId] = useState(DEMO_CUSTOMERS[0].id);
   const [messages, setMessages] = useState<Message[]>([
     {
       sender: 'bot',
-      text: 'Hello! I am your YellowSense Copilot. Select a customer on the left to load their financial profile, or ask general questions about portfolio operations.',
-      timestamp: new Date()
-    }
+      text: `Hello! I'm your YellowSense AI Copilot. I have real-time context on your entire customer portfolio. Select a customer from the panel to focus my context, or ask me anything about leads, churn risk, product recommendations, or customer intelligence.`,
+      timestamp: new Date(),
+      confidence: 98,
+      sources: ['YellowSense Intelligence Engine'],
+    },
   ]);
-  const [inputText, setInputText] = useState('');
-  const [generating, setGenerating] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  const selectedCustomer = DEMO_CUSTOMERS.find(c => c.id === selectedId)!;
 
   useEffect(() => {
-    async function loadCustomers() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await apiService.fetchCustomers();
-        setCustomers(data);
-        if (data.length > 0) {
-          // Set first customer as default
-          setSelectedCustomerId(data[0].id);
-        }
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message || 'Failed to fetch customer directories.');
-      } finally {
-        setLoading(false);
-      }
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
     }
-    loadCustomers();
-  }, []);
+  }, [messages, thinking]);
 
-  // Fetch full details of selected customer
-  useEffect(() => {
-    if (!selectedCustomerId) return;
-    const cust = customers.find(c => c.id === selectedCustomerId);
-    if (cust) {
-      setSelectedCustomer(cust);
-      
-      // Post context change message
-      setMessages(prev => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: `Context shifted to **${cust.full_name}** (${cust.segment}). How can I assist you with this portfolio account?`,
-          timestamp: new Date()
-        }
-      ]);
-    }
-  }, [selectedCustomerId, customers]);
-
-  // Scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, generating]);
-
-  const handleSendMessage = async (textToSend: string) => {
-    if (!textToSend.trim()) return;
-
-    // User Message
-    const userMsg: Message = {
-      sender: 'user',
-      text: textToSend,
-      timestamp: new Date()
-    };
+  const sendMessage = async (text: string) => {
+    if (!text.trim()) return;
+    const userMsg: Message = { sender: 'user', text, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
-    setInputText('');
-    setGenerating(true);
+    setInput('');
+    setThinking(true);
 
-    try {
-      // Simulate/determine AI answers based on query
-      const query = textToSend.toLowerCase();
-      let responseText = '';
-      let confidence = 85;
-      let sources: string[] = ['Central Data Hub'];
-
-      if (selectedCustomer) {
-        const id = selectedCustomer.id;
-        const name = selectedCustomer.full_name;
-
-        if (query.includes('next best') || query.includes('recommendation') || query.includes('action')) {
-          try {
-            const recommendations = await apiService.fetchCustomerRecommendations(id);
-            if (recommendations && recommendations.length > 0) {
-              const bestAction = recommendations[0];
-              responseText = `For **${name}**, the primary recommendation is **${bestAction.action_title}** (${bestAction.recommendation_type}).\n\n**Description:** ${bestAction.description}\n\n**Potential Value:** ₹${bestAction.potential_value.toLocaleString('en-IN')}\n**Model Score:** ${(bestAction.confidence_score * 100).toFixed(1)}%`;
-              confidence = Math.round(bestAction.confidence_score * 100);
-              sources = ['Next-Best-Action Predictor v2.1', 'ZRT Visit Notes', 'Interaction History Log'];
-            } else {
-              responseText = `I analyzed the account details for **${name}** and found no urgent recommended actions. The customer relationship is in a healthy, stable phase.`;
-              confidence = 91;
-              sources = ['Machine Learning Propensity Engine', 'Account Health Check Audit'];
-            }
-          } catch (recErr) {
-            responseText = `I recommend pitching a **Pre-Approved MSME Working Capital loan** of ₹25 Lakhs at a promotional 8.85% interest rate. This aligns with the client's recent expansion query.`;
-            confidence = 88;
-            sources = ['Loan Eligibility Pipeline', 'ZRT Visit Log'];
-          }
-        } else if (query.includes('churn') || query.includes('risk') || query.includes('vulnerability')) {
-          const risk = selectedCustomer.churn_risk;
-          responseText = `**Churn Risk Evaluation for ${name}:**\n\n* **Risk Level:** ${risk > 75 ? '⚠️ CRITICAL' : risk > 50 ? '⚡ MEDIUM' : '✅ LOW'} (${risk}%)\n* **Primary Drivers:** Unresolved service complaints regarding mobile bank app token validation, combined with a 15% drop in savings balance over 3 months.\n\n**Suggested Mitigation:** Arrange a service recovery call within 24 hours to address complaints and offer interest rate advisory.`;
-          confidence = 94;
-          sources = ['Churn Vulnerability Model v1.4', 'Interaction Ledger', 'Grievance Database'];
-        } else if (query.includes('propensity') || query.includes('cross-sell') || query.includes('product')) {
-          responseText = `**Product Propensity Matrix for ${name}:**\n\n1. **Business Cash Credit Facility:** 88% probability (Need expressed during site visit)\n2. **Group Term Insurance Plan:** 64% probability\n3. **Premium Wealth Management advisory:** 42% probability\n\nWe recommend scheduling an Advisory meeting to pitch the Cash Credit facility first.`;
-          confidence = 89;
-          sources = ['Propensity Scoring Service', 'Customer Portfolio Matrix'];
-        } else {
-          // General context reply
-          responseText = `I have access to **${name}'s** profile records. They have a relationship value of ₹${selectedCustomer.relationship_value.toLocaleString('en-IN')} and are classified in the **${selectedCustomer.segment}** tier.\n\nYou can query about their: \n- *Next Best Action*\n- *Churn Risks*\n- *Product Cross-sell Propensities*`;
-          confidence = 90;
-          sources = ['YellowSense Search Engine', 'Unified Customer Profile'];
-        }
-      } else {
-        responseText = `Please select an active Customer Focus from the sidebar context panel first so I can retrieve account history and generate custom recommendations.`;
-        confidence = 100;
-        sources = ['Copilot Guardrails'];
-      }
-
-      // Add delay for realism
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      setMessages(prev => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: responseText,
-          timestamp: new Date(),
-          confidence,
-          sources
-        }
-      ]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: 'Sorry, I encountered an issue querying the intelligence database.',
-          timestamp: new Date()
-        }
-      ]);
-    } finally {
-      setGenerating(false);
-    }
+    // Simulate "thinking" delay
+    await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
+    const resp = simulateResponse(text);
+    setMessages(prev => [...prev, {
+      sender: 'bot',
+      text: resp.text,
+      timestamp: new Date(),
+      confidence: resp.confidence,
+      sources: resp.sources,
+    }]);
+    setThinking(false);
   };
 
-  const handleSuggestedPrompt = (prompt: string) => {
-    handleSendMessage(prompt);
+  const handleCustomerSelect = (id: string) => {
+    setSelectedId(id);
+    const cust = DEMO_CUSTOMERS.find(c => c.id === id)!;
+    setMessages(prev => [...prev, {
+      sender: 'bot',
+      text: `Context loaded: **${cust.full_name}** (${cust.segment}). Relationship value: **₹${(cust.relationship_value / 100000).toFixed(1)}L**. Churn risk: **${cust.churn_risk}%**. Lead propensity: **${cust.lead_propensity}%**. How can I assist you with this portfolio account?`,
+      timestamp: new Date(),
+      confidence: 95,
+      sources: ['Customer 360 Profile', 'Risk Engine'],
+    }]);
   };
-
-  const suggestedPrompts = [
-    { title: 'Next Best Action', text: 'Show the next best action for this customer' },
-    { title: 'Churn Risk Factors', text: 'What is the churn vulnerability risk level and triggers?' },
-    { title: 'Cross-Sell Propensity', text: 'What is the product propensity score for cross-sell?' }
-  ];
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col md:flex-row gap-6">
-      {/* Side Context Panel */}
-      <div className="w-full md:w-80 premium-card flex flex-col shrink-0">
-        <div className="pb-3 border-b border-border-warm">
-          <span className="text-[10px] font-bold text-text-sub uppercase tracking-wider">Workspace focus</span>
-          <h2 className="text-base font-extrabold text-navy mt-0.5">Customer Context Selector</h2>
+    <div className="h-[calc(100vh-140px)] flex gap-6">
+      {/* Left Panel — Customer Selector */}
+      <div className="w-64 shrink-0 flex flex-col bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl overflow-hidden">
+        <div className="p-4 border-b border-[#E8DAAE]">
+          <h2 className="text-xs font-extrabold text-[#16263A] uppercase tracking-wider">Customer Context</h2>
+          <p className="text-[10px] text-[#6B7076] mt-0.5">Select to inject profile into AI context</p>
         </div>
-
-        <div className="mt-4 grow space-y-5">
-          {/* Dropdown Selector */}
-          <div>
-            <label className="block text-[10px] font-bold text-navy uppercase tracking-wider mb-1.5">
-              Active Focus Customer
-            </label>
-            {loading ? (
-              <div className="h-9 bg-bg-warm animate-pulse rounded-xl"></div>
-            ) : (
-              <select
-                className="w-full p-2.5 bg-bg-warm border border-border-warm rounded-xl text-xs font-bold text-text-main focus:outline-none"
-                value={selectedCustomerId}
-                onChange={e => setSelectedCustomerId(e.target.value)}
-              >
-                <option value="">-- Choose Account --</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.full_name} ({c.segment})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Active Context Details */}
-          {selectedCustomer ? (
-            <div className="space-y-4 pt-4 border-t border-border-warm">
-              <div className="p-3 bg-bg-warm/50 border border-border-warm rounded-xl">
-                <span className="text-[10px] text-text-sub font-bold block uppercase tracking-wider">Client Name</span>
-                <span className="font-extrabold text-navy text-sm block mt-0.5">{selectedCustomer.full_name}</span>
-                <span className="text-[10px] text-text-sub block mt-0.5">No: {selectedCustomer.customer_number}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-surface border border-border-warm rounded-xl">
-                  <span className="text-[9px] text-text-sub font-bold uppercase tracking-wider block">Segment</span>
-                  <span className="font-extrabold text-orange-acc text-xs block mt-0.5">{selectedCustomer.segment}</span>
-                </div>
-                <div className="p-3 bg-surface border border-border-warm rounded-xl">
-                  <span className="text-[9px] text-text-sub font-bold uppercase tracking-wider block">Churn Risk</span>
-                  <span className={`font-extrabold text-xs block mt-0.5 ${
-                    selectedCustomer.churn_risk > 75 
-                      ? 'text-danger-acc' 
-                      : selectedCustomer.churn_risk > 40 
-                      ? 'text-warning-acc' 
-                      : 'text-success-acc'
-                  }`}>
-                    {selectedCustomer.churn_risk}%
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-surface border border-border-warm rounded-xl">
-                <span className="text-[9px] text-text-sub font-bold uppercase tracking-wider block">Relationship Value</span>
-                <span className="font-extrabold text-navy text-sm block mt-0.5">
-                  ₹{selectedCustomer.relationship_value.toLocaleString('en-IN')}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {DEMO_CUSTOMERS.map(c => (
+            <button
+              key={c.id}
+              onClick={() => handleCustomerSelect(c.id)}
+              className={`w-full text-left p-2.5 rounded-xl border transition-all ${selectedId === c.id ? 'border-[#16263A] bg-[#16263A]/5' : 'border-transparent hover:border-[#E8DAAE] hover:bg-[#FFF9ED]'}`}
+            >
+              <p className="text-xs font-bold text-[#16263A] line-clamp-1">{c.full_name}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-[#6B7076]">{c.segment}</span>
+                <span className={`text-[10px] font-bold ${c.churn_risk >= 70 ? 'text-red-500' : c.churn_risk >= 40 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {c.churn_risk}% risk
                 </span>
               </div>
-            </div>
-          ) : (
-            <div className="p-6 text-center text-text-sub text-xs italic">
-              Select a customer focus to load AI context telemetry.
-            </div>
-          )}
+            </button>
+          ))}
         </div>
-
-        <div className="pt-3 border-t border-border-warm bg-bg-warm/30 rounded-xl p-3 flex gap-2 items-start text-[10px] text-text-sub">
-          <Layers className="w-4 h-4 text-orange-acc shrink-0 mt-0.5" />
-          <p className="font-semibold">
-            Copilot automatically loads recent emails, visit notes, and transaction histories into the context window.
-          </p>
+        {/* Active Context Card */}
+        <div className="p-3 border-t border-[#E8DAAE] bg-[#FFF9ED]">
+          <p className="text-[10px] font-bold text-[#6B7076] uppercase mb-1">Active Context</p>
+          <p className="text-xs font-extrabold text-[#16263A] line-clamp-1">{selectedCustomer.full_name}</p>
+          <p className="text-[10px] text-[#6B7076]">{selectedCustomer.segment} · {selectedCustomer.city}</p>
         </div>
       </div>
 
-      {/* Main Chat Panel */}
-      <div className="flex-1 premium-card p-0 overflow-hidden flex flex-col h-full bg-surface">
-        {/* Chat Header */}
-        <div className="p-4 border-b border-border-warm bg-surface flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-orange-acc/10 flex items-center justify-center text-orange-acc shadow-inner">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="font-extrabold text-navy text-sm flex items-center gap-1.5">
-                <span>YellowSense AI Copilot</span>
-                <span className="px-1.5 py-0.5 bg-success-acc/10 text-success-acc text-[9px] font-black uppercase rounded">Active</span>
-              </h2>
-              <p className="text-[10px] text-text-sub mt-0.5">Context: {selectedCustomer ? selectedCustomer.full_name : 'General Workspace'}</p>
-            </div>
+      {/* Main Chat */}
+      <div className="flex-1 flex flex-col bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl overflow-hidden">
+        {/* Header */}
+        <div className="p-4 border-b border-[#E8DAAE] flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#16263A] to-[#16263A]/70 flex items-center justify-center">
+            <Bot className="w-5 h-5 text-[#FFD51F]" />
+          </div>
+          <div>
+            <h1 className="font-extrabold text-[#16263A] text-sm">YellowSense AI Copilot</h1>
+            <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse inline-block" /> Online · Context: {selectedCustomer.full_name}
+            </p>
           </div>
         </div>
 
-        {/* Message history */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-bg-warm/15">
-          {messages.map((m, idx) => {
-            const isBot = m.sender === 'bot';
-            return (
-              <div key={idx} className={`flex gap-3 max-w-[85%] ${isBot ? '' : 'ml-auto flex-row-reverse'}`}>
-                {/* Avatar */}
-                <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
-                  isBot ? 'bg-navy text-white' : 'bg-yellow-acc text-navy font-bold text-xs shadow-xs'
-                }`}>
-                  {isBot ? <Bot className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+        {/* Messages */}
+        <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+              {/* Avatar */}
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${msg.sender === 'bot' ? 'bg-[#16263A]' : 'bg-[#F4A623]'}`}>
+                {msg.sender === 'bot' ? <Bot className="w-4 h-4 text-[#FFD51F]" /> : <User className="w-4 h-4 text-white" />}
+              </div>
+              <div className={`max-w-[75%] ${msg.sender === 'user' ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.sender === 'bot' ? 'bg-white border border-[#E8DAAE] text-[#29313A]' : 'bg-[#16263A] text-white'}`}>
+                  {msg.sender === 'bot' ? formatMarkdown(msg.text) : msg.text}
                 </div>
-
-                {/* Bubble Container */}
-                <div className="space-y-1.5">
-                  <div className={`p-4 rounded-2xl text-xs font-semibold leading-relaxed border ${
-                    isBot 
-                      ? 'bg-surface border-border-warm text-text-main shadow-xs' 
-                      : 'bg-yellow-acc/10 border-yellow-acc/30 text-navy'
-                  }`}>
-                    {/* Parse markdown bold and newlines manually for safety */}
-                    <div className="whitespace-pre-line">
-                      {m.text.split('**').map((chunk, i) => i % 2 === 1 ? <strong key={i} className="text-navy">{chunk}</strong> : chunk)}
-                    </div>
+                {msg.sender === 'bot' && msg.confidence && (
+                  <div className="flex items-center gap-2 px-1">
+                    <Sparkles className="w-3 h-3 text-[#F4A623]" />
+                    <span className="text-[10px] text-[#6B7076] font-semibold">{msg.confidence}% confidence</span>
+                    {msg.sources?.map(s => (
+                      <span key={s} className="text-[10px] bg-[#E8DAAE] text-[#16263A] px-1.5 py-0.5 rounded-full font-bold">{s}</span>
+                    ))}
                   </div>
-
-                  {/* Confidence / Sources Metadata */}
-                  {isBot && (m.confidence !== undefined || m.sources) && (
-                    <div className="flex flex-wrap items-center gap-3 px-1 text-[10px]">
-                      {m.confidence !== undefined && (
-                        <span className="flex items-center gap-1 font-bold text-text-sub bg-bg-warm border border-border-warm rounded-lg px-2 py-0.5">
-                          <Sparkles className="w-3 h-3 text-orange-acc" />
-                          <span>Confidence: {m.confidence}%</span>
-                        </span>
-                      )}
-                      {m.sources && m.sources.length > 0 && (
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span className="text-text-sub font-bold">Sources:</span>
-                          {m.sources.map((src, sIdx) => (
-                            <span
-                              key={sIdx}
-                              className="px-1.5 py-0.5 bg-navy/5 text-navy font-bold rounded-md border border-border-warm/50 text-[9px]"
-                            >
-                              {src}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
+                <span className="text-[10px] text-[#6B7076] px-1">{msg.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-            );
-          })}
+            </div>
+          ))}
 
-          {generating && (
-            <div className="flex gap-3 max-w-[85%]">
-              <div className="w-7 h-7 rounded-xl bg-navy text-white flex items-center justify-center shrink-0">
-                <Bot className="w-3.5 h-3.5" />
+          {/* Thinking indicator */}
+          {thinking && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-xl bg-[#16263A] flex items-center justify-center shrink-0">
+                <Bot className="w-4 h-4 text-[#FFD51F]" />
               </div>
-              <div className="p-4 bg-surface border border-border-warm rounded-2xl text-xs font-semibold text-text-sub flex items-center gap-2">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Thinking and analyzing sources...</span>
+              <div className="px-4 py-3 rounded-2xl bg-white border border-[#E8DAAE] flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-[#16263A] rounded-full animate-bounce [animation-delay:0ms]" />
+                <span className="w-2 h-2 bg-[#16263A] rounded-full animate-bounce [animation-delay:150ms]" />
+                <span className="w-2 h-2 bg-[#16263A] rounded-full animate-bounce [animation-delay:300ms]" />
               </div>
             </div>
           )}
-          <div ref={chatEndRef} />
         </div>
 
-        {/* Footer controls & prompt suggestions */}
-        <div className="p-4 border-t border-border-warm bg-surface space-y-3 shrink-0">
-          {/* Quick pills */}
-          {selectedCustomer && (
-            <div className="flex flex-wrap gap-2">
-              {suggestedPrompts.map(pill => (
-                <button
-                  key={pill.title}
-                  type="button"
-                  onClick={() => handleSuggestedPrompt(pill.text)}
-                  className="px-2.5 py-1 bg-yellow-acc/10 hover:bg-yellow-acc/25 border border-yellow-acc/30 text-navy font-bold text-[10px] rounded-lg transition"
-                >
-                  ✨ {pill.title}
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Suggested Prompts */}
+        <div className="px-4 py-2 flex gap-2 overflow-x-auto scrollbar-hide">
+          {SUGGESTED_PROMPTS.map(p => (
+            <button
+              key={p}
+              onClick={() => sendMessage(p)}
+              className="shrink-0 text-[10px] font-bold bg-[#FFF9ED] border border-[#E8DAAE] text-[#16263A] hover:border-[#F4A623] px-3 py-1.5 rounded-full transition-all"
+            >
+              {p}
+            </button>
+          ))}
+        </div>
 
-          {/* Form input bar */}
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              handleSendMessage(inputText);
-            }}
-            className="flex items-center gap-2 relative"
-          >
+        {/* Input */}
+        <div className="p-4 border-t border-[#E8DAAE]">
+          <form onSubmit={e => { e.preventDefault(); sendMessage(input); }} className="flex gap-3">
             <input
-              type="text"
-              placeholder={selectedCustomer ? "Ask copilot anything about this account..." : "Select active customer context..."}
-              disabled={!selectedCustomer}
-              className="w-full pl-4 pr-12 py-3 bg-bg-warm border border-border-warm rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-yellow-acc font-semibold disabled:opacity-50 text-text-main"
-              value={inputText}
-              onChange={e => setInputText(e.target.value)}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Ask about leads, churn risk, customer profiles, next best actions..."
+              className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-[#E8DAAE] bg-[#FFF9ED] font-medium text-[#16263A] focus:outline-none focus:ring-2 focus:ring-[#FFD51F] placeholder:text-[#6B7076]"
             />
             <button
               type="submit"
-              disabled={!inputText.trim() || generating || !selectedCustomer}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-navy text-white rounded-xl hover:bg-navy/95 transition disabled:opacity-50"
+              disabled={!input.trim() || thinking}
+              className="w-10 h-10 rounded-xl bg-[#16263A] hover:bg-[#16263A]/90 text-white flex items-center justify-center disabled:opacity-40 transition-all"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-4 h-4" />
             </button>
           </form>
         </div>

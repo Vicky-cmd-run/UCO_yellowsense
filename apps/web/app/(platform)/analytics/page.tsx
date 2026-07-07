@@ -1,384 +1,192 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { apiService } from '../../../services/api';
-import { useDemoStore } from '../../../stores/demoStore';
+import React, { useState } from 'react';
+import { DEMO_ANALYTICS, DEMO_LEADS, DEMO_VISITS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
 import {
-  TrendingUp, Users, Target, Percent, Briefcase, BarChart3,
-  RefreshCw, MapPin, ArrowUpRight, ArrowDownRight, CheckCircle2,
-  Calendar, Layers, Sparkles, Filter, FileSpreadsheet
+  TrendingUp, Target, Users, BarChart2, CheckCircle,
+  Calendar, Award, ArrowUpRight
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
-  BarChart, Bar, CartesianGrid
+  BarChart, Bar, Cell, PieChart, Pie, Legend, Sector
 } from 'recharts';
 
-// INR Formatting Helper
-const formatINR = (value: number) => {
-  if (value >= 10000000) {
-    return `₹${(value / 10000000).toFixed(2)} Cr`;
-  } else if (value >= 100000) {
-    return `₹${(value / 100000).toFixed(2)} L`;
-  }
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0
-  }).format(value);
+const formatINR = (v: number) => {
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)} Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)} L`;
+  return `₹${v.toLocaleString('en-IN')}`;
 };
 
+const SEGMENT_DATA = [
+  { name: 'MSME', value: 42, color: '#16263A' },
+  { name: 'HNI', value: 28, color: '#F4A623' },
+  { name: 'SME', value: 18, color: '#FF8A16' },
+  { name: 'MICRO', value: 12, color: '#E8DAAE' },
+];
+
+const MONTHLY_TREND = [
+  { month: 'Jan', visits: 18, leads: 8, converted: 5 },
+  { month: 'Feb', visits: 22, leads: 11, converted: 7 },
+  { month: 'Mar', visits: 28, leads: 14, converted: 9 },
+  { month: 'Apr', visits: 25, leads: 12, converted: 8 },
+  { month: 'May', visits: 32, leads: 18, converted: 12 },
+  { month: 'Jun', visits: 38, leads: 22, converted: 15 },
+  { month: 'Jul', visits: 41, leads: 26, converted: 17 },
+];
+
 export default function AnalyticsPage() {
-  const { activeUser } = useDemoStore();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'mobilization' | 'conversion'>('mobilization');
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-
-  useEffect(() => {
-    if (!activeUser) return;
-    async function loadAnalytics() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await apiService.fetchAnalytics(activeUser?.role || 'HEAD_OFFICE');
-        setData(res);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message || 'Failed to fetch analytics MIS datasets.');
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadAnalytics();
-  }, [activeUser, refreshTrigger]);
-
-  if (loading) {
-    return (
-      <div className="space-y-8 animate-pulse">
-        <div className="flex justify-between items-center">
-          <div className="space-y-2">
-            <div className="h-8 w-64 bg-border-warm rounded-lg"></div>
-            <div className="h-4 w-96 bg-border-warm rounded-lg"></div>
-          </div>
-          <div className="h-10 w-28 bg-border-warm rounded-lg"></div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-32 bg-surface border border-border-warm rounded-2xl p-6"></div>
-          ))}
-        </div>
-        <div className="h-96 bg-surface border border-border-warm rounded-2xl"></div>
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className="premium-card max-w-xl mx-auto my-12 text-center p-8 space-y-4">
-        <BarChart3 className="w-12 h-12 text-danger-acc mx-auto" />
-        <h3 className="text-lg font-bold text-navy">Error Loading Analytics</h3>
-        <p className="text-text-sub text-sm">{error || 'Unable to retrieve dashboard metrics.'}</p>
-        <button
-          onClick={() => setRefreshTrigger(prev => prev + 1)}
-          className="px-4 py-2 bg-yellow-acc hover:bg-yellow-acc/90 text-navy font-bold rounded-xl transition inline-flex items-center gap-2 shadow-sm"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>Retry</span>
-        </button>
-      </div>
-    );
-  }
-
-  const kpis = data.kpis || {};
-  const mobilizationTrend = data.business_mobilization_trend || [];
-  const leadFunnel = data.lead_funnel || [];
-  const regionalPerformance = data.regional_performance || [];
+  const [activeTab, setActiveTab] = useState<'executive' | 'sales' | 'digital'>('executive');
+  const data = DEMO_ANALYTICS.executive;
+  const totalPipelineValue = DEMO_LEADS.filter(l => l.stage !== 'Lost').reduce((s, l) => s + l.potential_value, 0);
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-navy tracking-tight">Analytics & MIS Dashboard</h1>
-          <p className="text-text-sub text-sm mt-1">
-            Audit portfolio performance, track business mobilization trends, and evaluate funnel conversion timelines.
-          </p>
-        </div>
-        <div className="flex gap-2">
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-extrabold text-[#16263A] tracking-tight">Analytics & Insights</h1>
+        <p className="text-[#6B7076] text-sm mt-1">Portfolio performance metrics · Branch intelligence · July 2026</p>
+      </div>
+
+      {/* Tab selector */}
+      <div className="flex gap-2">
+        {(['executive', 'sales', 'digital'] as const).map(t => (
           <button
-            onClick={() => setRefreshTrigger(prev => prev + 1)}
-            className="p-2 border border-border-warm hover:bg-surface text-navy rounded-xl transition bg-white"
-            title="Refresh"
+            key={t}
+            onClick={() => setActiveTab(t)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all border ${activeTab === t ? 'bg-[#16263A] text-white border-[#16263A]' : 'border-[#E8DAAE] text-[#6B7076] hover:border-[#16263A]'}`}
           >
-            <RefreshCw className="w-4 h-4 text-text-sub" />
+            {t === 'executive' ? '🏛 Executive' : t === 'sales' ? '📈 Sales' : '📱 Digital'}
           </button>
-          <button
-            onClick={() => alert('Exporting PDF/CSV...')}
-            className="px-4 py-2 border border-border-warm hover:bg-surface text-navy font-bold rounded-xl transition flex items-center gap-2 bg-white text-xs shadow-sm"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-text-sub" />
-            <span>Export Report</span>
-          </button>
-        </div>
+        ))}
       </div>
 
-      {/* Primary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="premium-card bg-surface border-l-4 border-l-yellow-acc">
-          <div className="flex justify-between items-start text-text-sub">
-            <span className="text-xs font-bold uppercase tracking-wider">Total Value Managed</span>
-            <Briefcase className="w-4 h-4 text-navy" />
+      {/* KPI Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Portfolio Value', value: formatINR(data.kpis.relationship_value.value), trend: data.kpis.relationship_value.trend, positive: true },
+          { label: 'Active Customers', value: data.kpis.active_customers.value, trend: data.kpis.active_customers.trend, positive: true },
+          { label: 'Business Mobilized', value: formatINR(data.kpis.business_mobilized.value), trend: data.kpis.business_mobilized.trend, positive: true },
+          { label: 'Conversion Rate', value: `${data.kpis.conversion_rate.value}%`, trend: data.kpis.conversion_rate.trend, positive: true },
+        ].map(kpi => (
+          <div key={kpi.label} className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-4">
+            <p className="text-[10px] font-bold text-[#6B7076] uppercase tracking-wider mb-2">{kpi.label}</p>
+            <p className="text-xl font-extrabold text-[#16263A]">{kpi.value}</p>
+            <p className={`text-xs font-bold mt-1 flex items-center gap-1 ${kpi.positive ? 'text-emerald-600' : 'text-red-600'}`}>
+              <ArrowUpRight className="w-3 h-3" /> {kpi.trend}
+            </p>
           </div>
-          <div className="mt-3">
-            <span className="text-2xl font-extrabold text-navy tracking-tight">
-              {formatINR(kpis.relationship_value?.value || 0)}
-            </span>
-          </div>
-          <div className="mt-2 text-[10px] text-text-sub font-semibold">
-            Active portfolio valuation
-          </div>
+        ))}
+      </div>
+
+      {/* Charts Row 1 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Mobilization Trend */}
+        <div className="lg:col-span-2 bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6">
+          <h2 className="font-extrabold text-[#16263A] mb-1">Business Mobilization</h2>
+          <p className="text-xs text-[#6B7076] mb-4">Actual vs Target · 7 months · ₹ values</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={data.business_mobilization_trend}>
+              <defs>
+                <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#16263A" stopOpacity={0.12} />
+                  <stop offset="95%" stopColor="#16263A" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7076' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#6B7076' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 10000000).toFixed(1)}Cr`} />
+              <Tooltip formatter={(v: any) => formatINR(v)} contentStyle={{ borderRadius: 12, border: '1px solid #E8DAAE', fontSize: 11 }} />
+              <Area type="monotone" dataKey="target" name="Target" stroke="#FFD51F" strokeDasharray="5 5" strokeWidth={1.5} fill="none" />
+              <Area type="monotone" dataKey="mobilized" name="Mobilized" stroke="#16263A" strokeWidth={2.5} fill="url(#aGrad)" />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
 
-        <div className="premium-card bg-surface border-l-4 border-l-gold">
-          <div className="flex justify-between items-start text-text-sub">
-            <span className="text-xs font-bold uppercase tracking-wider">Business Mobilized</span>
-            <TrendingUp className="w-4 h-4 text-gold" />
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-extrabold text-navy tracking-tight">
-              {formatINR(kpis.business_mobilized?.value || 0)}
-            </span>
-          </div>
-          <div className="mt-2 text-[10px] text-text-sub font-semibold">
-            Acquisitions this quarter
-          </div>
-        </div>
-
-        <div className="premium-card bg-surface border-l-4 border-l-orange-acc">
-          <div className="flex justify-between items-start text-text-sub">
-            <span className="text-xs font-bold uppercase tracking-wider">Funnel Conversion</span>
-            <Percent className="w-4 h-4 text-orange-acc" />
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-extrabold text-navy tracking-tight">
-              {kpis.conversion_rate?.value || 0}%
-            </span>
-          </div>
-          <div className="mt-2 text-[10px] text-text-sub font-semibold">
-            Average conversion lead-time
-          </div>
-        </div>
-
-        <div className="premium-card bg-surface border-l-4 border-l-success-acc">
-          <div className="flex justify-between items-start text-text-sub">
-            <span className="text-xs font-bold uppercase tracking-wider">Active Customers</span>
-            <Users className="w-4 h-4 text-success-acc" />
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-extrabold text-navy tracking-tight">
-              {(kpis.active_customers?.value || 0).toLocaleString()}
-            </span>
-          </div>
-          <div className="mt-2 text-[10px] text-text-sub font-semibold">
-            Client accounts in system
+        {/* Segment Distribution */}
+        <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6">
+          <h2 className="font-extrabold text-[#16263A] mb-1">Portfolio by Segment</h2>
+          <p className="text-xs text-[#6B7076] mb-4">Distribution of {DEMO_CUSTOMERS.length} customers</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <PieChart>
+              <Pie data={SEGMENT_DATA} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
+                {SEGMENT_DATA.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+              </Pie>
+              <Tooltip formatter={(v: any) => `${v}%`} contentStyle={{ borderRadius: 12, border: '1px solid #E8DAAE', fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {SEGMENT_DATA.map(s => (
+              <div key={s.name} className="flex items-center gap-1.5 text-xs">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                <span className="text-[#6B7076]">{s.name}</span>
+                <span className="font-bold text-[#16263A] ml-auto">{s.value}%</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Tabs Selector */}
-      <div className="flex border-b border-border-warm gap-4">
-        <button
-          onClick={() => setActiveTab('mobilization')}
-          className={`pb-3 px-2 text-sm font-extrabold transition relative ${
-            activeTab === 'mobilization' ? 'text-orange-acc' : 'text-text-sub hover:text-navy'
-          }`}
-        >
-          <span>Business Mobilization Analysis</span>
-          {activeTab === 'mobilization' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-acc rounded-full"></div>
-          )}
-        </button>
+      {/* Charts Row 2 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Monthly Activity Trend */}
+        <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6">
+          <h2 className="font-extrabold text-[#16263A] mb-1">Monthly Activity</h2>
+          <p className="text-xs text-[#6B7076] mb-4">Visits, leads generated, leads converted</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={MONTHLY_TREND} barCategoryGap="30%">
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#6B7076' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#6B7076' }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #E8DAAE', fontSize: 11 }} />
+              <Bar dataKey="visits" name="Visits" fill="#E8DAAE" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="leads" name="Leads" fill="#F4A623" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="converted" name="Converted" fill="#16263A" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
 
-        <button
-          onClick={() => setActiveTab('conversion')}
-          className={`pb-3 px-2 text-sm font-extrabold transition relative ${
-            activeTab === 'conversion' ? 'text-orange-acc' : 'text-text-sub hover:text-navy'
-          }`}
-        >
-          <span>Lead Conversion & Funnel</span>
-          {activeTab === 'conversion' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-acc rounded-full"></div>
-          )}
-        </button>
+        {/* Lead Funnel */}
+        <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6">
+          <h2 className="font-extrabold text-[#16263A] mb-1">Lead Pipeline Funnel</h2>
+          <p className="text-xs text-[#6B7076] mb-4">Total pipeline value: {formatINR(totalPipelineValue)}</p>
+          <div className="space-y-3">
+            {data.lead_funnel.map((item, i) => {
+              const maxCount = Math.max(...data.lead_funnel.map(f => f.count));
+              const pct = Math.round((item.count / maxCount) * 100);
+              const colors = ['#16263A', '#F4A623', '#FF8A16', '#2F8467', '#FFD51F'];
+              return (
+                <div key={item.stage}>
+                  <div className="flex justify-between text-xs font-bold mb-1">
+                    <span className="text-[#29313A]">{item.stage}</span>
+                    <span className="text-[#6B7076]">{item.count} leads · {formatINR(item.value)}</span>
+                  </div>
+                  <div className="w-full h-3 bg-[#E8DAAE] rounded-full">
+                    <div className="h-3 rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: colors[i] }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Tab Panels */}
-      {activeTab === 'mobilization' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Chart area */}
-          <div className="premium-card lg:col-span-2 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-border-warm">
-              <div>
-                <h3 className="font-extrabold text-navy text-sm">Asset Accumulation Trend</h3>
-                <p className="text-[10px] text-text-sub mt-0.5">Asset acquisition trend in INR compared against targets</p>
+      {/* Regional Leaderboard */}
+      <div className="bg-[#FFFDF7] border border-[#E8DAAE] rounded-2xl p-6">
+        <h2 className="font-extrabold text-[#16263A] mb-1">Regional Leaderboard</h2>
+        <p className="text-xs text-[#6B7076] mb-5">Branch performance ranked by mobilization value</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {data.regional_performance.map(r => (
+            <div key={r.region} className={`p-4 rounded-2xl border ${r.rank === 1 ? 'bg-[#FFD51F]/10 border-[#FFD51F]' : 'border-[#E8DAAE]'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${r.rank === 1 ? 'bg-[#FFD51F] text-[#16263A]' : r.rank === 2 ? 'bg-[#F4A623] text-white' : r.rank === 3 ? 'bg-[#E8DAAE] text-[#16263A]' : 'bg-slate-100 text-slate-600'}`}>
+                  #{r.rank}
+                </span>
+                <Award className={`w-4 h-4 ${r.rank === 1 ? 'text-[#F4A623]' : 'text-[#E8DAAE]'}`} />
               </div>
-              <div className="flex gap-3 text-[10px] font-bold">
-                <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-acc"></div>Actual</span>
-                <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-yellow-acc"></div>Target</span>
-              </div>
+              <p className="text-xs font-extrabold text-[#16263A] mb-0.5">{r.region}</p>
+              <p className="text-base font-extrabold text-[#16263A]">{formatINR(r.value)}</p>
+              <p className="text-[10px] text-[#6B7076] mt-1">{r.customers} customers · {r.leads} leads</p>
             </div>
-
-            <div className="h-80 w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mobilizationTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorMobilized" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FF8A16" stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor="#FF8A16" stopOpacity={0.01}/>
-                    </linearGradient>
-                    <linearGradient id="colorTarget" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FFD51F" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#FFD51F" stopOpacity={0.0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="date" stroke="#6B7076" fontSize={10} tickLine={false} />
-                  <YAxis
-                    stroke="#6B7076"
-                    fontSize={10}
-                    tickLine={false}
-                    tickFormatter={(val) => `₹${(val / 100000).toFixed(0)}L`}
-                  />
-                  <Tooltip
-                    formatter={(val: any) => [formatINR(val), '']}
-                    contentStyle={{
-                      backgroundColor: '#FFFDF7',
-                      borderRadius: '12px',
-                      border: '1px solid #E8DAAE',
-                      color: '#16263A',
-                      fontSize: '11px',
-                      fontWeight: 'bold'
-                    }}
-                  />
-                  <Area type="monotone" dataKey="mobilized" stroke="#FF8A16" strokeWidth={2.5} fillOpacity={1} fill="url(#colorMobilized)" />
-                  <Area type="monotone" dataKey="target" stroke="#FFD51F" strokeWidth={1.5} strokeDasharray="4 4" fillOpacity={1} fill="url(#colorTarget)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Regional Table */}
-          <div className="premium-card flex flex-col justify-between">
-            <div>
-              <div className="pb-3 border-b border-border-warm">
-                <h3 className="font-extrabold text-navy text-sm">Regional Division Rankings</h3>
-                <p className="text-[10px] text-text-sub mt-0.5">Asset acquisition benchmarks across regions</p>
-              </div>
-
-              <div className="mt-4 divide-y divide-border-warm">
-                {regionalPerformance.map((region: any) => (
-                  <div key={region.region} className="py-2.5 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-bg-warm text-navy border border-border-warm flex items-center justify-center font-bold text-xs">
-                        {region.rank}
-                      </div>
-                      <span className="font-bold text-navy text-xs">{region.region}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-extrabold text-navy text-xs">{formatINR(region.value)}</span>
-                      <span className="text-[9px] text-success-acc font-bold block mt-0.5 flex items-center justify-end gap-0.5">
-                        <TrendingUp className="w-2.5 h-2.5" />
-                        Growth
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-bg-warm/50 border border-border-warm rounded-xl p-3 text-[10px] text-text-sub mt-4 flex gap-1.5 items-start">
-              <Sparkles className="w-4 h-4 text-orange-acc shrink-0" />
-              <p className="font-semibold">
-                Chennai Central leads other regions with an aggregate 40% growth index.
-              </p>
-            </div>
-          </div>
+          ))}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Funnel distribution chart */}
-          <div className="premium-card lg:col-span-2 space-y-4">
-            <div className="pb-3 border-b border-border-warm">
-              <h3 className="font-extrabold text-navy text-sm">Lead Conversion Funnel Flow</h3>
-              <p className="text-[10px] text-text-sub mt-0.5">Aggregated pipeline volume distribution across stages</p>
-            </div>
-
-            <div className="h-80 w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={leadFunnel} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E8DAAE" opacity={0.3} />
-                  <XAxis dataKey="stage" stroke="#6B7076" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#6B7076" fontSize={10} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#FFFDF7',
-                      borderRadius: '12px',
-                      border: '1px solid #E8DAAE',
-                      color: '#16263A',
-                      fontSize: '11px',
-                      fontWeight: 'bold'
-                    }}
-                  />
-                  <Bar dataKey="count" fill="#FF8A16" radius={[6, 6, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Funnel health parameters */}
-          <div className="premium-card flex flex-col justify-between">
-            <div>
-              <div className="pb-3 border-b border-border-warm">
-                <h3 className="font-extrabold text-navy text-sm">Conversion Health Telemetry</h3>
-                <p className="text-[10px] text-text-sub mt-0.5">Average pipeline velocity and dropoff factors</p>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                <div className="p-3 bg-bg-warm/40 border border-border-warm rounded-xl flex justify-between items-center">
-                  <div>
-                    <span className="text-[10px] text-text-sub font-bold block uppercase tracking-wider">Average Onboarding Duration</span>
-                    <span className="text-sm font-extrabold text-navy mt-0.5 block">14.2 Days</span>
-                  </div>
-                  <Calendar className="w-5 h-5 text-text-sub" />
-                </div>
-
-                <div className="p-3 bg-bg-warm/40 border border-border-warm rounded-xl flex justify-between items-center">
-                  <div>
-                    <span className="text-[10px] text-text-sub font-bold block uppercase tracking-wider">Lead Drop-Off Ratio</span>
-                    <span className="text-sm font-extrabold text-navy mt-0.5 block">18.5%</span>
-                  </div>
-                  <Target className="w-5 h-5 text-danger-acc" />
-                </div>
-
-                <div className="p-3 bg-bg-warm/40 border border-border-warm rounded-xl flex justify-between items-center">
-                  <div>
-                    <span className="text-[10px] text-text-sub font-bold block uppercase tracking-wider">Referral Channel Share</span>
-                    <span className="text-sm font-extrabold text-navy mt-0.5 block">62.8%</span>
-                  </div>
-                  <Users className="w-5 h-5 text-success-acc" />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-bg-warm/50 border border-border-warm rounded-xl p-3 text-[10px] text-text-sub mt-4 flex gap-1.5 items-start">
-              <CheckCircle2 className="w-4 h-4 text-success-acc shrink-0" />
-              <p className="font-semibold">
-                Drop-off rates remained below 20% limit guidelines, satisfying board standards.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
