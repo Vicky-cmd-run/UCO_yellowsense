@@ -27,6 +27,10 @@ export const DEMO_CUSTOMERS = [
     churn_risk: 18, lead_propensity: 87,
     gst_number: '33AABCK1234A1ZX', turnover: 120000000,
     assigned_rm_id: 'u002', assigned_zrt_id: 'u001',
+    msme_scheme_qualified: 'CGTMSE Collateral-Free Scheme',
+    kcc_eligible: false,
+    fraud_check_status: 'PASSED',
+    security_alerts_count: 0,
     accounts: [
       { id: 'a001', account_number: 'CC2024001001', account_type: 'CURRENT', balance: 4200000, status: 'ACTIVE', branch: 'Chennai Central', ifsc: 'UCOB0001234' },
       { id: 'a002', account_number: 'OD2024001002', account_type: 'OVERDRAFT', balance: -1500000, limit: 5000000, status: 'ACTIVE', branch: 'Chennai Central', ifsc: 'UCOB0001234' },
@@ -45,6 +49,10 @@ export const DEMO_CUSTOMERS = [
     digital_engagement_score: 15, sentiment: 'NEGATIVE',
     churn_risk: 82, lead_propensity: 32,
     assigned_rm_id: 'u002', assigned_zrt_id: 'u001',
+    msme_scheme_qualified: null,
+    kcc_eligible: false,
+    fraud_check_status: 'FAILED',
+    security_alerts_count: 1,
     accounts: [
       { id: 'a003', account_number: 'SB2024002001', account_type: 'SAVINGS', balance: 320000, status: 'ACTIVE', branch: 'Chennai Central', ifsc: 'UCOB0001234' },
     ],
@@ -62,6 +70,10 @@ export const DEMO_CUSTOMERS = [
     churn_risk: 25, lead_propensity: 74,
     gst_number: '33AABCS5678B2ZY', turnover: 65000000,
     assigned_rm_id: 'u002', assigned_zrt_id: 'u001',
+    msme_scheme_qualified: 'Mudra Loan Scheme',
+    kcc_eligible: false,
+    fraud_check_status: 'WARNING',
+    security_alerts_count: 1,
     accounts: [
       { id: 'a004', account_number: 'CC2024003001', account_type: 'CURRENT', balance: 2100000, status: 'ACTIVE', branch: 'Coimbatore Main', ifsc: 'UCOB0005678' },
     ],

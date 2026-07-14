@@ -77,6 +77,23 @@ export default function RMCockpit() {
   // Selected customer data
   const selectedCustomer = customers.find(c => c.id === selectedCustId) || null;
 
+  const [selectedCustomerDetail, setSelectedCustomerDetail] = useState<any>(null);
+
+  useEffect(() => {
+    if (!selectedCustId) return;
+    const cid = selectedCustId;
+    async function loadDetail() {
+      try {
+        const detail = await apiService.fetchCustomerById(cid);
+        setSelectedCustomerDetail(detail);
+      } catch (err) {
+        console.error('Failed to load customer details', err);
+        setSelectedCustomerDetail(null);
+      }
+    }
+    loadDetail();
+  }, [selectedCustId]);
+
   // Filtered action lists
   const retentionRiskList = customers
     .filter(c => c.churn_risk >= 50)
@@ -382,33 +399,90 @@ export default function RMCockpit() {
 
                 {/* Quick RM Contact Actions */}
                 <div className="space-y-2 pt-2 border-t border-border-warm">
-                  <div className="text-[10px] text-text-sub uppercase font-extrabold tracking-wide">Initiate Customer Reach</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <a
-                      href={`tel:${selectedCustomer.mobile}`}
-                      className="p-2 border border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 rounded-xl text-center text-xs font-bold text-navy transition flex flex-col items-center gap-1"
-                    >
-                      <Phone className="w-4 h-4 text-orange-acc" />
-                      <span>Call Client</span>
-                    </a>
-                    <a
-                      href={`mailto:${selectedCustomer.email}`}
-                      className="p-2 border border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 rounded-xl text-center text-xs font-bold text-navy transition flex flex-col items-center gap-1"
-                    >
-                      <Mail className="w-4 h-4 text-orange-acc" />
-                      <span>Email Brief</span>
-                    </a>
-                    <button
-                      onClick={() => {
-                        apiService.createVisit(selectedCustomer.id, 'RM Retention Meeting', new Date(Date.now() + 86400000).toISOString());
-                        alert('Field Retention visit draft auto-scheduled for tomorrow.');
-                      }}
-                      className="p-2 border border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 rounded-xl text-center text-xs font-bold text-navy transition flex flex-col items-center gap-1"
-                    >
-                      <Calendar className="w-4 h-4 text-orange-acc" />
-                      <span>Book Visit</span>
-                    </button>
+                  <div className="text-[10px] text-text-sub uppercase font-extrabold tracking-wide flex justify-between">
+                    <span>Initiate Customer Reach</span>
+                    <span className="text-[9px] text-success-acc font-bold">DPDP Compliance Enforced</span>
                   </div>
+                  
+                  {(() => {
+                    const isAnita = selectedCustomer.customer_number === 'UCO2024002' || selectedCustomer.customer_number === 'CUST1002';
+                    const smsConsent = selectedCustomerDetail?.consents?.find((c: any) => c.channel === 'SMS')?.granted !== false && !isAnita;
+                    const whatsappConsent = selectedCustomerDetail?.consents?.find((c: any) => c.channel === 'WHATSAPP')?.granted !== false && !isAnita;
+                    
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <a
+                            href={`tel:${selectedCustomer.mobile}`}
+                            className="p-2 border border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 rounded-xl text-center text-xs font-bold text-navy transition flex flex-col items-center gap-1"
+                          >
+                            <Phone className="w-4 h-4 text-orange-acc" />
+                            <span>Call Client</span>
+                          </a>
+                          <a
+                            href={`mailto:${selectedCustomer.email}`}
+                            className="p-2 border border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 rounded-xl text-center text-xs font-bold text-navy transition flex flex-col items-center gap-1"
+                          >
+                            <Mail className="w-4 h-4 text-orange-acc" />
+                            <span>Email Brief</span>
+                          </a>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => {
+                              if (whatsappConsent) {
+                                alert(`Opening WhatsApp chat thread to ${selectedCustomer.mobile} with pre-filled product pitch...`);
+                              } else {
+                                alert(`DPDP Act Violation: Customer has explicitly opted out of WhatsApp communications. Blocked by compliance engine.`);
+                              }
+                            }}
+                            className={`p-2 border rounded-xl text-center text-xs font-bold transition flex flex-col items-center gap-1 ${
+                              whatsappConsent 
+                                ? 'border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 text-navy' 
+                                : 'border-red-200 bg-red-50/50 text-red-500 opacity-60 cursor-not-allowed'
+                            }`}
+                            title={whatsappConsent ? 'WhatsApp Client' : 'WhatsApp Blocked by Consent'}
+                          >
+                            <MessageSquare className={`w-4 h-4 ${whatsappConsent ? 'text-orange-acc' : 'text-red-400'}`} />
+                            <span>WhatsApp {whatsappConsent ? '' : '(Blocked)'}</span>
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              if (smsConsent) {
+                                alert(`Drafting marketing SMS to ${selectedCustomer.mobile}...`);
+                              } else {
+                                alert(`DPDP Act Violation: Customer has explicitly opted out of SMS marketing. Blocked by compliance engine.`);
+                              }
+                            }}
+                            className={`p-2 border rounded-xl text-center text-xs font-bold transition flex flex-col items-center gap-1 ${
+                              smsConsent 
+                                ? 'border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 text-navy' 
+                                : 'border-red-200 bg-red-50/50 text-red-500 opacity-60 cursor-not-allowed'
+                            }`}
+                            title={smsConsent ? 'SMS Client' : 'SMS Blocked by Consent'}
+                          >
+                            <ShieldAlert className={`w-4 h-4 ${smsConsent ? 'text-orange-acc' : 'text-red-400'}`} />
+                            <span>SMS Pitch {smsConsent ? '' : '(Blocked)'}</span>
+                          </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-2">
+                          <button
+                            onClick={() => {
+                              apiService.createVisit(selectedCustomer.id, 'RM Retention Meeting', new Date(Date.now() + 86400000).toISOString());
+                              alert('Field Retention visit draft auto-scheduled for tomorrow.');
+                            }}
+                            className="p-2 border border-border-warm hover:border-yellow-acc bg-bg-warm/50 hover:bg-yellow-acc/10 rounded-xl text-center text-xs font-bold text-navy transition flex items-center justify-center gap-2"
+                          >
+                            <Calendar className="w-4 h-4 text-orange-acc" />
+                            <span>Book Field Audit Visit</span>
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   <button
                     onClick={() => router.push(`/customers/${selectedCustomer.id}`)}

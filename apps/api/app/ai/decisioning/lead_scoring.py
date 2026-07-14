@@ -17,7 +17,9 @@ def calculate_lead_score(customer: Any, need_assessment: Any = None) -> Dict[str
             need_assessment.term_loan_need,
             need_assessment.pos_qr_need,
             need_assessment.salary_account_need,
-            need_assessment.insurance_need
+            need_assessment.insurance_need,
+            getattr(need_assessment, 'agricultural_need', False),
+            getattr(need_assessment, 'scheme_matching_need', False)
         ])
         explicit_need_contrib = min(40, needs_checked * 15)
     else:
@@ -26,7 +28,16 @@ def calculate_lead_score(customer: Any, need_assessment: Any = None) -> Dict[str
             explicit_need_contrib = int(customer.lead_propensity * 0.4)
             
     doc_contrib = 15  # Assume partial documents available for seed data
-    rel_contrib = min(10, int(customer.relationship_tenure_months * 0.2))
+    
+    # Add tenure contribution + scheme matching bonus (for KCC or MSME schemes)
+    scheme_bonus = 0
+    if hasattr(customer, 'profile') and customer.profile:
+        if getattr(customer.profile, 'kcc_eligible', False):
+            scheme_bonus += 10
+        if getattr(customer.profile, 'msme_scheme_qualified', None):
+            scheme_bonus += 15
+            
+    rel_contrib = min(10, int(customer.relationship_tenure_months * 0.2)) + scheme_bonus
     
     # Penalties
     inactivity_penalty = 0

@@ -78,6 +78,14 @@ export default function VisitExecutionWizard({ params }: PageProps) {
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
+  const [ocrLoading, setOcrLoading] = useState<string | null>(null);
+  const [ocrResults, setOcrResults] = useState<Record<string, any>>({});
+  
+  // Travel claim inputs
+  const [declaredRoute, setDeclaredRoute] = useState('');
+  const [claimedDistance, setClaimedDistance] = useState('');
+  const [claimedDuration, setClaimedDuration] = useState('');
+  
   const [newLeadCreated, setNewLeadCreated] = useState(false);
   const [leadProduct, setLeadProduct] = useState('');
   const [leadValue, setLeadValue] = useState('');
@@ -176,11 +184,34 @@ export default function VisitExecutionWizard({ params }: PageProps) {
     );
   };
 
-  // Step 6: Mock Document upload
-  const handleUploadMockDoc = (docType: string) => {
+  // Step 6: Mock Document upload and OCR eKYC scan simulation
+  const handleUploadMockDoc = async (docType: string) => {
+    if (!customer) return;
     if (uploadedDocs.includes(docType)) {
       setUploadedDocs(prev => prev.filter(d => d !== docType));
-    } else {
+      const nextResults = { ...ocrResults };
+      delete nextResults[docType];
+      setOcrResults(nextResults);
+      return;
+    }
+
+    setOcrLoading(docType);
+    try {
+      const fileName = `${docType.toLowerCase().replace(/ /g, '_')}_uco_2026.pdf`;
+      const ocrData = await apiService.scanDocumentOCR(customer.id, docType, fileName);
+      setOcrResults(prev => ({ ...prev, [docType]: ocrData }));
+      
+      // Visual feedback
+      if (ocrData.status === 'FRAUD_ALERT') {
+        alert(`⚠ OCR Security Alert: Document validation flagged a security warning!\nReason: Filename or content keywords match regulatory alert rules.`);
+      } else {
+        alert(`✓ OCR eKYC Extraction Completed Successfully!\nExtracted fields:\n${Object.entries(ocrData.extracted_fields).map(([k, v]) => `${k}: ${v}`).join('\n')}`);
+      }
+    } catch (err: any) {
+      console.error('OCR Extraction failed', err);
+      alert('OCR Extraction service error: ' + err.message);
+    } finally {
+      setOcrLoading(null);
       setUploadedDocs(prev => [...prev, docType]);
     }
   };
@@ -213,8 +244,29 @@ export default function VisitExecutionWizard({ params }: PageProps) {
   const handleCompleteVisit = async () => {
     setSubmittingComplete(true);
     try {
-      await apiService.completeVisit(visitId, needAssessment, notes);
-      alert('Field visit completed successfully!');
+      // Simulate checkout coordinates by offsetting check-in coordinates slightly
+      const checkoutLat = visit?.latitude ? visit.latitude + 0.008 : 12.9796;
+      const checkoutLng = visit?.longitude ? visit.longitude + 0.008 : 77.6026;
+      
+      const claimedDist = parseFloat(claimedDistance) || 0.0;
+      const claimedDur = parseFloat(claimedDuration) || 0.0;
+      
+      const res = await apiService.completeVisit(
+        visitId, 
+        needAssessment, 
+        notes, 
+        checkoutLat, 
+        checkoutLng, 
+        claimedDist, 
+        claimedDur, 
+        declaredRoute || 'Unspecified Direct Route'
+      );
+      
+      if (res.variance_flag) {
+        alert('⚠ Audit Warning: Travel claims variance detected! Your claimed distance/duration exceeds the system GPS-tracked calculations by more than 20%. This has been logged in the cryptographic ledger for audit review.');
+      } else {
+        alert('✓ Field visit and travel claims validated successfully! Saved to cryptographic audit ledger.');
+      }
       router.push('/zrt');
     } catch (err: any) {
       console.error(err);
@@ -601,22 +653,49 @@ export default function VisitExecutionWizard({ params }: PageProps) {
                   'Customer Signature Seal'
                 ].map((docType) => {
                   const uploaded = uploadedDocs.includes(docType);
+                  const scanning = ocrLoading === docType;
+                  const ocrData = ocrResults[docType];
+                  
                   return (
-                    <button
-                      key={docType}
-                      onClick={() => handleUploadMockDoc(docType)}
-                      className={`p-3 border rounded-xl text-center text-xs transition font-semibold flex flex-col items-center justify-center gap-1.5 ${
-                        uploaded
-                          ? 'bg-success-acc/10 border-success-acc text-success-acc'
-                          : 'bg-surface border-border-warm hover:border-yellow-acc text-text-sub hover:text-navy'
-                      }`}
-                    >
-                      <FileText className="w-4 h-4" />
-                      <span>{docType}</span>
-                      <span className="text-[8px] tracking-wide uppercase font-extrabold mt-0.5">
-                        {uploaded ? 'Attached' : 'Upload'}
-                      </span>
-                    </button>
+                    <div key={docType} className="flex flex-col gap-1 border border-border-warm/50 p-2 rounded-2xl bg-bg-warm/10">
+                      <button
+                        onClick={() => !scanning && handleUploadMockDoc(docType)}
+                        disabled={scanning}
+                        className={`w-full p-3 border rounded-xl text-center text-xs transition font-semibold flex flex-col items-center justify-center gap-1.5 ${
+                          scanning
+                            ? 'bg-orange-acc/10 border-orange-acc text-orange-acc animate-pulse cursor-wait'
+                            : uploaded
+                              ? ocrData?.status === 'FRAUD_ALERT'
+                                ? 'bg-red-50 border-red-200 text-red-500 hover:bg-red-100/50'
+                                : 'bg-success-acc/10 border-success-acc text-success-acc'
+                              : 'bg-surface border-border-warm hover:border-yellow-acc text-text-sub hover:text-navy'
+                        }`}
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span className="truncate max-w-full text-[10px]">{docType}</span>
+                        <span className="text-[8px] tracking-wide uppercase font-extrabold mt-0.5">
+                          {scanning ? 'OCR Scanning...' : uploaded ? 'Scanned' : 'Upload'}
+                        </span>
+                      </button>
+                      
+                      {ocrData && (
+                        <div className={`p-1.5 text-[9px] rounded-lg border font-mono ${
+                          ocrData.status === 'FRAUD_ALERT' 
+                            ? 'bg-red-50 border-red-200 text-red-700' 
+                            : 'bg-emerald-50 border-emerald-100 text-emerald-800'
+                        }`}>
+                          <div className="font-extrabold text-[8px] uppercase flex justify-between mb-0.5">
+                            <span>OCR Readout</span>
+                            <span>{ocrData.status}</span>
+                          </div>
+                          {Object.entries(ocrData.extracted_fields).map(([k, v]) => (
+                            <div key={k} className="truncate">
+                              {k}: {v as string}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -705,6 +784,61 @@ export default function VisitExecutionWizard({ params }: PageProps) {
               <h3 className="text-base font-extrabold text-navy">Ready to Finalize Visit</h3>
               <p className="text-xs text-text-sub px-4">
                 Verify summarized indicators. Completed runs are audited for performance incentives.
+              </p>
+            </div>
+
+            {/* Travel Reimbursement Claims Section */}
+            <div className="bg-surface border border-border-warm rounded-2xl p-4 space-y-3">
+              <h4 className="text-xs font-extrabold text-navy uppercase tracking-wider flex justify-between">
+                <span>Travel Reimbursement Claim</span>
+                <span className="text-[9px] text-orange-acc font-extrabold">GPS Audited</span>
+              </h4>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-navy uppercase tracking-wider mb-1">
+                  Declared Route Description
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chennai Central -> Ambattur Office"
+                  className="w-full px-3 py-2 bg-[#FFFDF7] border border-border-warm rounded-xl text-xs text-text-main font-semibold focus:outline-none focus:ring-1 focus:ring-yellow-acc"
+                  value={declaredRoute}
+                  onChange={(e) => setDeclaredRoute(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-navy uppercase tracking-wider mb-1">
+                    Claimed Distance (km)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="e.g. 5.4"
+                    className="w-full px-3 py-2 bg-[#FFFDF7] border border-border-warm rounded-xl text-xs text-text-main font-semibold focus:outline-none focus:ring-1 focus:ring-yellow-acc"
+                    value={claimedDistance}
+                    onChange={(e) => setClaimedDistance(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-navy uppercase tracking-wider mb-1">
+                    Claimed Duration (mins)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 20"
+                    className="w-full px-3 py-2 bg-[#FFFDF7] border border-border-warm rounded-xl text-xs text-text-main font-semibold focus:outline-none focus:ring-1 focus:ring-yellow-acc"
+                    value={claimedDuration}
+                    onChange={(e) => setClaimedDuration(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-text-sub leading-normal">
+                Note: UCO Bank policy enforces GPS validation. Claims with variance &gt;20% compared to check-in/out telemetry will trigger audit flag overrides.
               </p>
             </div>
 

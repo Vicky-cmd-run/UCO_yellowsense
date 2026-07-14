@@ -83,14 +83,14 @@ def create_lead(
     db.refresh(lead)
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="LEAD_CREATED",
         entity_type="Lead",
         entity_id=lead.id,
         after_state=f"New lead created for product {data.product} with potential value of ₹{data.potential_value}."
     )
-    db.add(audit)
     db.commit()
     
     # Return lead with customer name
@@ -117,7 +117,8 @@ def update_lead_stage(
     customer = db.query(Customer).filter(Customer.id == lead.customer_id).first()
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="LEAD_STAGE_UPDATED",
         entity_type="Lead",
@@ -125,7 +126,6 @@ def update_lead_stage(
         before_state=before_state,
         after_state=f'{{"stage": "{data.stage}"}}'
     )
-    db.add(audit)
     db.commit()
     
     item = LeadResponse.from_orm(lead)
@@ -156,7 +156,8 @@ def assign_lead_owner(
     customer = db.query(Customer).filter(Customer.id == lead.customer_id).first()
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="LEAD_ASSIGNED",
         entity_type="Lead",
@@ -164,7 +165,6 @@ def assign_lead_owner(
         before_state=before_state,
         after_state=f'{{"owner_id": "{data.owner_id}"}}'
     )
-    db.add(audit)
     db.commit()
     
     item = LeadResponse.from_orm(lead)

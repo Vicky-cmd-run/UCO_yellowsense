@@ -77,7 +77,9 @@ def seed_db(db: Session):
         digital_engagement_score = 65,
         sentiment = "NEUTRAL",
         churn_risk = 24,
-        lead_propensity = 84
+        lead_propensity = 84,
+        latitude = 12.9716,
+        longitude = 77.5946
     )
     db.add(cust_a)
     
@@ -100,7 +102,9 @@ def seed_db(db: Session):
         digital_engagement_score = 40,
         sentiment = "NEGATIVE",
         churn_risk = 82,
-        lead_propensity = 15
+        lead_propensity = 15,
+        latitude = 12.9780,
+        longitude = 77.5900
     )
     db.add(cust_b)
     
@@ -123,7 +127,9 @@ def seed_db(db: Session):
         digital_engagement_score = 20,
         sentiment = "POSITIVE",
         churn_risk = 10,
-        lead_propensity = 90
+        lead_propensity = 90,
+        latitude = 11.0168,
+        longitude = 76.9558
     )
     db.add(cust_c)
     
@@ -175,21 +181,24 @@ def seed_db(db: Session):
             digital_engagement_score = 30 + (i * 2) % 60,
             sentiment = sent,
             churn_risk = risk,
-            lead_propensity = prop
+            lead_propensity = prop,
+            latitude = 12.9716 + ((i * 0.002) % 0.04) - 0.02,
+            longitude = 77.5946 + ((i * 0.002) % 0.04) - 0.02
         )
         db.add(cust)
         other_customers.append(cust)
         
     db.commit()
     
-    # Refresh all customers
-    db.refresh(cust_a)
-    db.refresh(cust_b)
-    db.refresh(cust_c)
-    for c in other_customers:
-        db.refresh(c)
-        
     all_customers = [cust_a, cust_b, cust_c] + other_customers
+    
+    # 2.5 Compute Fraud Status Assessment
+    from app.ai.decisioning.fraud_detection import run_full_fraud_assessment
+    for c in all_customers:
+        assessment = run_full_fraud_assessment(c)
+        c.fraud_check_status = assessment["status"]
+        c.security_alerts_count = assessment["alerts_count"]
+    db.commit()
     
     # 3. Create Customer Profiles
     # Profile A: Kumar Textiles
@@ -202,7 +211,9 @@ def seed_db(db: Session):
         annual_turnover = 32000000.0, # 3.2 Cr
         employee_count = 45,
         preferred_language = "Tamil",
-        preferred_channel = "WHATSAPP"
+        preferred_channel = "WHATSAPP",
+        kcc_eligible = False,
+        msme_scheme_qualified = "CGTMSE Collateral-Free Scheme"
     )
     db.add(prof_a)
     
@@ -216,7 +227,9 @@ def seed_db(db: Session):
         annual_turnover = 0.0,
         employee_count = 0,
         preferred_language = "English",
-        preferred_channel = "EMAIL"
+        preferred_channel = "EMAIL",
+        kcc_eligible = False,
+        msme_scheme_qualified = None
     )
     db.add(prof_b)
     
@@ -230,7 +243,9 @@ def seed_db(db: Session):
         annual_turnover = 58000000.0,
         employee_count = 60,
         preferred_language = "Tamil",
-        preferred_channel = "CALL"
+        preferred_channel = "CALL",
+        kcc_eligible = False,
+        msme_scheme_qualified = "Mudra Loan Scheme"
     )
     db.add(prof_c)
     
@@ -245,7 +260,9 @@ def seed_db(db: Session):
             annual_turnover = 2000000.0 + (i * 500000) % 15000000 if c.customer_type == "CORPORATE" else 0.0,
             employee_count = i * 2 if c.customer_type == "CORPORATE" else 0,
             preferred_language = "English" if i % 2 == 0 else "Hindi",
-            preferred_channel = "EMAIL" if i % 3 == 0 else "SMS"
+            preferred_channel = "EMAIL" if i % 3 == 0 else "SMS",
+            kcc_eligible = True if (c.customer_type == "INDIVIDUAL" and i % 4 == 0) else False,
+            msme_scheme_qualified = "CGTMSE Collateral-Free Scheme" if (c.customer_type == "CORPORATE" and i % 3 == 0) else None
         )
         db.add(prof)
     
@@ -673,11 +690,16 @@ def seed_db(db: Session):
     for c in all_customers:
         channels = ["EMAIL", "SMS", "WHATSAPP", "CALL"]
         for chan in channels:
+            # Opt out Anita Sharma from SMS/WHATSAPP to demonstrate DPDP controls
+            is_granted = True if chan != "CALL" else (c.customer_type == "CORPORATE")
+            if c.customer_number == "CUST1002" and chan in ["SMS", "WHATSAPP"]:
+                is_granted = False
+                
             con = Consent(
                 customer_id=c.id,
                 channel=chan,
                 purpose="Marketing pitches and product updates",
-                granted=True if chan != "CALL" else (c.customer_type == "CORPORATE"),
+                granted=is_granted,
                 captured_at=datetime.utcnow() - timedelta(days=180)
             )
             db.add(con)
@@ -737,10 +759,8 @@ def seed_db(db: Session):
     audit_events = []
     
     # Showcases
-    ae1 = AuditEvent(actor_id="system", action="NBA_GENERATED", entity_type="Customer", entity_id=cust_a.id, before_state=None, after_state="AI next best action recommendation generated for Kumar Textiles Pvt Ltd.")
-    ae2 = AuditEvent(actor_id="system", action="NBA_GENERATED", entity_type="Customer", entity_id=cust_b.id, before_state=None, after_state="AI next best action recommendation generated for Anita Sharma.")
-    db.add(ae1)
-    db.add(ae2)
+    ae1 = AuditEvent(actor_id="system", action="NBA_GENERATED", entity_type="Customer", entity_id=cust_a.id, before_state=None, after_state="AI next best action recommendation generated for Kumar Textiles Pvt Ltd.", timestamp=datetime.utcnow() - timedelta(days=5))
+    ae2 = AuditEvent(actor_id="system", action="NBA_GENERATED", entity_type="Customer", entity_id=cust_b.id, before_state=None, after_state="AI next best action recommendation generated for Anita Sharma.", timestamp=datetime.utcnow() - timedelta(days=5))
     audit_events.extend([ae1, ae2])
     
     for i in range(100 - len(audit_events)):
@@ -757,8 +777,20 @@ def seed_db(db: Session):
             after_state=f'{{"status": "{act}_COMPLETED"}}',
             timestamp=datetime.utcnow() - timedelta(hours=i)
         )
-        db.add(ae)
         audit_events.append(ae)
+        
+    # Sort audit events chronologically
+    audit_events.sort(key=lambda x: x.timestamp)
+    
+    # Compute SHA-256 hash chaining
+    import hashlib
+    prev_hash = "0" * 64
+    for ae in audit_events:
+        ae.previous_hash = prev_hash
+        data_str = f"{ae.actor_id}|{ae.action}|{ae.entity_type}|{ae.entity_id}|{ae.before_state}|{ae.after_state}|{prev_hash}"
+        ae.hash = hashlib.sha256(data_str.encode('utf-8')).hexdigest()
+        prev_hash = ae.hash
+        db.add(ae)
         
     db.commit()
     

@@ -70,7 +70,8 @@ def update_complaint(
     customer = db.query(Customer).filter(Customer.id == complaint.customer_id).first()
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="COMPLAINT_UPDATED",
         entity_type="Complaint",
@@ -78,7 +79,6 @@ def update_complaint(
         before_state=before_state,
         after_state=f'{{"status": "{complaint.status}", "escalation": {complaint.escalation_level}}}'
     )
-    db.add(audit)
     db.commit()
     
     item = ComplaintResponse.from_orm(complaint)

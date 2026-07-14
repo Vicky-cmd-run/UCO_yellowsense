@@ -1,7 +1,8 @@
 'use client';
 
-import React, { use, useState } from 'react';
+import React, { use, useState, useEffect } from 'react';
 import { DEMO_CUSTOMERS, DEMO_RECOMMENDATIONS, DEMO_LEADS, DEMO_MEETINGS, DEMO_COMPLAINTS, DEMO_VISITS, DEMO_AUDIT_EVENTS } from '@/services/DEMO_DATA';
+import { apiService } from '@/services/api';
 import {
   ArrowLeft, User, Phone, Mail, MapPin, Building2, Star,
   TrendingDown, Activity, ChevronRight, CheckCircle, XCircle,
@@ -59,14 +60,53 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
   const [activeTab, setActiveTab] = useState('overview');
   const [dismissedRec, setDismissedRec] = useState<string[]>([]);
 
-  const customer = DEMO_CUSTOMERS.find(c => c.id === customerId) || DEMO_CUSTOMERS[0];
-  const recommendations = (DEMO_RECOMMENDATIONS[customer.id] || DEMO_RECOMMENDATIONS['c001'])
+  const [customer, setCustomer] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [consents, setConsents] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadCustomer() {
+      try {
+        const data = await apiService.fetchCustomerById(customerId);
+        setCustomer(data);
+        setConsents(data.consents || []);
+      } catch (err) {
+        console.warn('API error, falling back to static mock data', err);
+        const staticCust = DEMO_CUSTOMERS.find(c => c.id === customerId) || DEMO_CUSTOMERS[0];
+        setCustomer(staticCust);
+        
+        // Populate consents static fallback
+        const isAnita = staticCust.customer_number === 'UCO2024002' || staticCust.id === 'c002';
+        setConsents([
+          { channel: 'EMAIL', purpose: 'Marketing communications via Email', granted: !isAnita, captured_at: new Date(Date.now() - 180 * 86400000).toISOString() },
+          { channel: 'SMS', purpose: 'Marketing communications via SMS', granted: !isAnita, captured_at: new Date(Date.now() - 180 * 86400000).toISOString() },
+          { channel: 'WHATSAPP', purpose: 'Marketing communications via WhatsApp', granted: !isAnita, captured_at: new Date(Date.now() - 180 * 86400000).toISOString() },
+          { channel: 'CALL', purpose: 'Third-party relationship calls', granted: staticCust.customer_type === 'CORPORATE', captured_at: new Date(Date.now() - 180 * 86400000).toISOString() }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadCustomer();
+  }, [customerId]);
+
+  const recommendations = (DEMO_RECOMMENDATIONS[customer?.id || 'c001'] || DEMO_RECOMMENDATIONS['c001'])
     .filter(r => !dismissedRec.includes(r.id));
-  const customerLeads = DEMO_LEADS.filter(l => l.customer_id === customer.id);
-  const customerMeetings = DEMO_MEETINGS.filter(m => m.customer_id === customer.id);
-  const customerComplaints = DEMO_COMPLAINTS.filter(c => c.customer_id === customer.id);
-  const customerVisits = DEMO_VISITS.filter(v => v.customer_id === customer.id);
-  const customerAudit = DEMO_AUDIT_EVENTS.filter(e => e.entity_id === customer.id || e.description.toLowerCase().includes(customer.full_name.split(' ')[0].toLowerCase())).slice(0, 8);
+  const customerLeads = DEMO_LEADS.filter(l => l.customer_id === customer?.id);
+  const customerMeetings = DEMO_MEETINGS.filter(m => m.customer_id === customer?.id);
+  const customerComplaints = DEMO_COMPLAINTS.filter(c => c.customer_id === customer?.id);
+  const customerVisits = DEMO_VISITS.filter(v => v.customer_id === customer?.id);
+  const customerAudit = DEMO_AUDIT_EVENTS.filter(e => e.entity_id === customer?.id || (customer?.full_name && e.description.toLowerCase().includes(customer.full_name.split(' ')[0].toLowerCase()))).slice(0, 8);
+
+  if (loading || !customer) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] py-12 bg-[#FFFDF7]">
+        <div className="flex flex-col items-center gap-3">
+          <span className="text-xs text-navy font-bold animate-pulse">Loading Customer 360 Workspace...</span>
+        </div>
+      </div>
+    );
+  }
 
   const riskColor = customer.churn_risk >= 70 ? 'text-red-600 bg-red-50 border-red-200' :
     customer.churn_risk >= 40 ? 'text-amber-600 bg-amber-50 border-amber-200' :
@@ -123,6 +163,26 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
           </div>
         </div>
       </div>
+
+      {/* Fraud Check Warning Alerts */}
+      {customer.fraud_check_status === 'FAILED' && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 text-red-500 mt-0.5 shrink-0 animate-bounce" />
+          <div className="space-y-1">
+            <h4 className="font-extrabold text-red-700 text-xs uppercase tracking-wide">Security & Fraud Risk Warning</h4>
+            <p className="text-xs text-red-600 font-semibold">Active regulatory warnings (SEBI Warning Watchlist) detected on associated customer holdings. Verify transaction paths and enforce strict compliance controls immediately.</p>
+          </div>
+        </div>
+      )}
+      {customer.fraud_check_status === 'WARNING' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <h4 className="font-extrabold text-amber-700 text-xs uppercase tracking-wide">Compliance Warning Alert</h4>
+            <p className="text-xs text-amber-600 font-semibold">Email domain validation alert: Registered company profile uses a mismatching public email host domain.</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         {/* AI Recommendation Panel */}
@@ -202,6 +262,8 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
                       ['State', customer.state],
                       ...(customer.gst_number ? [['GST Number', customer.gst_number]] : []),
                       ...(customer.turnover ? [['Annual Turnover', formatINR(customer.turnover)]] : []),
+                      ...((customer.profile?.kcc_eligible || customer.kcc_eligible) ? [['KCC Agri Finance', 'QUALIFIED']] : []),
+                      ...((customer.profile?.msme_scheme_qualified || customer.msme_scheme_qualified) ? [['UCO MSME Scheme Match', customer.profile?.msme_scheme_qualified || customer.msme_scheme_qualified]] : []),
                       ['Assigned RM', 'Priya Nair'],
                       ['Assigned ZRT', 'Arjun Rao'],
                     ].map(([k, v]) => (
@@ -389,11 +451,11 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
               <div className="space-y-3">
                 <h3 className="text-sm font-extrabold text-[#16263A] mb-1">Consent & Data Permissions (DPDP 2023)</h3>
                 <p className="text-xs text-[#6B7076] mb-4">Customer-controlled data usage consents as per Digital Personal Data Protection Act 2023.</p>
-                {DEMO_CONSENT.map(c => (
-                  <div key={c.purpose} className="flex items-center justify-between p-3 border border-[#E8DAAE] rounded-xl">
+                {consents.map(c => (
+                  <div key={c.channel} className="flex items-center justify-between p-3 border border-[#E8DAAE] rounded-xl">
                     <div>
-                      <p className="text-xs font-bold text-[#16263A]">{c.purpose}</p>
-                      <p className="text-[10px] text-[#6B7076]">Consent recorded: {c.date}</p>
+                      <p className="text-xs font-bold text-[#16263A]">{c.purpose || 'Marketing and Product Pitches'} ({c.channel})</p>
+                      <p className="text-[10px] text-[#6B7076]">Consent recorded: {new Date(c.captured_at || Date.now()).toLocaleDateString()}</p>
                     </div>
                     {c.granted ? (
                       <div className="flex items-center gap-1 text-emerald-600 font-bold text-xs"><CheckCircle className="w-4 h-4" /> Granted</div>

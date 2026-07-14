@@ -159,9 +159,26 @@ export const apiService = {
     return res.json();
   },
 
-  async completeVisit(visitId: string, needAssessment: any, notes: string | null) {
+  async completeVisit(
+    visitId: string,
+    needAssessment: any,
+    notes: string | null,
+    checkoutLatitude: number | null = null,
+    checkoutLongitude: number | null = null,
+    claimedDistanceKm: number = 0.0,
+    claimedDurationMins: number = 0.0,
+    declaredRoute: string | null = null
+  ) {
     const headers = await getHeaders();
-    const body = { need_assessment: needAssessment, notes };
+    const body = {
+      need_assessment: needAssessment,
+      notes,
+      checkout_latitude: checkoutLatitude,
+      checkout_longitude: checkoutLongitude,
+      claimed_distance_km: claimedDistanceKm,
+      claimed_duration_mins: claimedDurationMins,
+      declared_route: declaredRoute
+    };
 
     if (useDemoStore.getState().networkStatus === 'Offline') {
       const visit = await localDb.visits.get(visitId);
@@ -169,6 +186,11 @@ export const apiService = {
         visit.check_out_at = new Date().toISOString();
         visit.status = 'COMPLETED';
         visit.notes = notes || undefined;
+        visit.checkout_latitude = checkoutLatitude || undefined;
+        visit.checkout_longitude = checkoutLongitude || undefined;
+        visit.claimed_distance_km = claimedDistanceKm;
+        visit.claimed_duration_mins = claimedDurationMins;
+        visit.declared_route = declaredRoute || undefined;
         visit.sync_status = 'PENDING';
         await localDb.visits.put(visit);
       }
@@ -188,6 +210,22 @@ export const apiService = {
       headers,
       body: JSON.stringify(body)
     });
+    return res.json();
+  },
+
+  async scanDocumentOCR(customerId: string, documentType: string, fileName: string) {
+    const headers = await getHeaders();
+    const res = await fetch(`${API_BASE}/visits/ocr-scan`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ customer_id: customerId, document_type: documentType, file_name: fileName })
+    });
+    return res.json();
+  },
+
+  async verifyAuditLedger() {
+    const headers = await getHeaders();
+    const res = await fetch(`${API_BASE}/audit/verify`, { headers });
     return res.json();
   },
 

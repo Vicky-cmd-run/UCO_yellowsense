@@ -47,6 +47,14 @@ class VisitListItem(BaseModel):
     check_out_at: datetime | None
     latitude: float | None
     longitude: float | None
+    checkout_latitude: float | None = None
+    checkout_longitude: float | None = None
+    claimed_distance_km: float | None = 0.0
+    claimed_duration_mins: float | None = 0.0
+    system_distance_km: float | None = 0.0
+    system_duration_mins: float | None = 0.0
+    declared_route: str | None = None
+    variance_flag: bool = False
     geo_verified: bool
     notes: str | None
     status: str
@@ -73,6 +81,11 @@ class CheckInRequest(BaseModel):
 class VisitCompleteRequest(BaseModel):
     need_assessment: NeedAssessmentCreate
     notes: str | None
+    checkout_latitude: float | None = None
+    checkout_longitude: float | None = None
+    claimed_distance_km: float | None = 0.0
+    claimed_duration_mins: float | None = 0.0
+    declared_route: str | None = None
 
 @router.get("", response_model=List[VisitListItem])
 def get_visits(db: Session = Depends(get_db), current_user: Any = Depends(get_current_user)):
@@ -104,14 +117,14 @@ def create_visit(
     db.refresh(visit)
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="VISIT_SCHEDULED",
         entity_type="Visit",
         entity_id=visit.id,
         after_state=f"Field visit scheduled for customer {customer.full_name}."
     )
-    db.add(audit)
     db.commit()
     
     return visit
@@ -122,6 +135,24 @@ def get_visit_by_id(id: str, db: Session = Depends(get_db), current_user: Any = 
     if not visit:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found")
     return visit
+
+import math
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    # Radius of the Earth in meters
+    R = 6371000.0
+    
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = (math.sin(delta_phi / 2.0) ** 2 +
+         math.cos(phi1) * math.cos(phi2) *
+         math.sin(delta_lambda / 2.0) ** 2)
+         
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
 
 @router.post("/{id}/check-in", response_model=VisitListItem)
 def check_in_visit(
@@ -134,24 +165,39 @@ def check_in_visit(
     if not visit:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found")
         
+    # Perform geofencing validation
+    customer = db.query(Customer).filter(Customer.id == visit.customer_id).first()
+    geo_verified = True
+    distance_msg = "Geofencing verified."
+    
+    if customer and customer.latitude is not None and customer.longitude is not None:
+        distance = haversine_distance(data.latitude, data.longitude, customer.latitude, customer.longitude)
+        # Threshold: 100 meters
+        if distance > 100.0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Geofencing validation failed: Check-in coordinates are {distance:.1f} meters away from client location (maximum allowed: 100m). Spoof protection active."
+            )
+        distance_msg = f"Geofencing verified. Distance: {distance:.1f}m."
+        
     visit.check_in_at = datetime.utcnow()
     visit.latitude = data.latitude
     visit.longitude = data.longitude
-    visit.geo_verified = True  # Simulated geo-verification success
+    visit.geo_verified = geo_verified
     visit.status = "IN_PROGRESS"
     
     db.commit()
     db.refresh(visit)
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="VISIT_CHECKED_IN",
         entity_type="Visit",
         entity_id=visit.id,
-        after_state=f"ZRT checked in at coordinates ({data.latitude}, {data.longitude}). Geofencing verified."
+        after_state=f"ZRT checked in at coordinates ({data.latitude}, {data.longitude}). {distance_msg}"
     )
-    db.add(audit)
     db.commit()
     
     return visit
@@ -165,9 +211,37 @@ def complete_visit(
 ):
     visit = db.query(Visit).filter(Visit.id == id).first()
     if not visit:
-        raise HTTPException(status_code=status.HTTP_444_NOT_FOUND, detail="Visit not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found")
         
-    visit.check_out_at = datetime.utcnow()
+    checkout_time = datetime.utcnow()
+    
+    # Travel claim validation using Haversine formula
+    system_dist_km = 0.0
+    if data.checkout_latitude is not None and data.checkout_longitude is not None and visit.latitude is not None and visit.longitude is not None:
+        dist_m = haversine_distance(visit.latitude, visit.longitude, data.checkout_latitude, data.checkout_longitude)
+        system_dist_km = dist_m / 1000.0
+        
+    # Calculate actual duration in minutes
+    duration_mins = 0.0
+    if visit.check_in_at:
+        duration_mins = (checkout_time - visit.check_in_at).total_seconds() / 60.0
+        
+    # Calculate threshold (20%)
+    variance_flag = False
+    if data.claimed_distance_km and data.claimed_distance_km > system_dist_km * 1.20:
+        variance_flag = True
+    if data.claimed_duration_mins and data.claimed_duration_mins > duration_mins * 1.20:
+        variance_flag = True
+        
+    visit.check_out_at = checkout_time
+    visit.checkout_latitude = data.checkout_latitude
+    visit.checkout_longitude = data.checkout_longitude
+    visit.claimed_distance_km = data.claimed_distance_km or 0.0
+    visit.claimed_duration_mins = data.claimed_duration_mins or 0.0
+    visit.system_distance_km = system_dist_km
+    visit.system_duration_mins = duration_mins
+    visit.declared_route = data.declared_route
+    visit.variance_flag = variance_flag
     visit.status = "COMPLETED"
     visit.notes = data.notes
     
@@ -231,14 +305,75 @@ def complete_visit(
         db.refresh(customer)
         
     # Audit log
-    audit = AuditEvent(
+    variance_msg = f"Travel Claims: Route: '{visit.declared_route}'. Claimed {visit.claimed_distance_km}km / {visit.claimed_duration_mins}mins. Computed: {system_dist_km:.2f}km / {duration_mins:.1f}mins. Variance flag set to {variance_flag}."
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="VISIT_COMPLETED",
         entity_type="Visit",
         entity_id=visit.id,
-        after_state=f"Field visit completed. Need assessment checklist submitted: WC={data.need_assessment.working_capital_need}, Loan={data.need_assessment.term_loan_need}."
+        after_state=f"Field visit completed. {variance_msg}"
     )
-    db.add(audit)
     db.commit()
     
     return visit
+
+class OCRScanRequest(BaseModel):
+    document_type: str
+    file_name: str
+    customer_id: str
+
+class OCRScanResponse(BaseModel):
+    document_type: str
+    extracted_fields: dict
+    confidence: float
+    status: str
+
+@router.post("/ocr-scan", response_model=OCRScanResponse)
+def ocr_scan_document(data: OCRScanRequest, db: Session = Depends(get_db), current_user: Any = Depends(get_current_user)):
+    # Run simulated OCR extraction
+    doc_type = data.document_type.upper()
+    
+    customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
+    cust_name = customer.full_name if customer else "UCO Customer"
+    
+    from app.ai.decisioning.fraud_detection import check_document_fraud
+    fraud_res = check_document_fraud(data.document_type, data.file_name)
+    
+    extracted = {}
+    if "PAN" in doc_type:
+        extracted = {
+            "pan_number": "ABCDE1234F" if customer and customer.customer_number == "CUST1001" else "ANITA6789S",
+            "name": cust_name,
+            "document_type": "PAN CARD"
+        }
+    elif "GST" in doc_type:
+        extracted = {
+            "gst_number": customer.gst_number if customer and customer.gst_number else "33AABCK1234A1ZX",
+            "legal_name": cust_name,
+            "document_type": "GST CERTIFICATE"
+        }
+    else:
+        extracted = {
+            "document_type": data.document_type,
+            "extracted_text": f"Simulated OCR extract for {data.file_name}"
+        }
+        
+    status = "VERIFIED" if fraud_res["passed"] else "FRAUD_ALERT"
+    
+    AuditEvent.create_secured(
+        db,
+        actor_id=current_user.employee_id,
+        action="OCR_DOCUMENT_SCANNED",
+        entity_type="Visit",
+        entity_id=data.customer_id,
+        after_state=f"OCR scanned '{data.file_name}' for document {doc_type}. Status: {status}. Confidence: 98.6%. Info: {fraud_res['reason']}"
+    )
+    db.commit()
+    
+    return OCRScanResponse(
+        document_type=doc_type,
+        extracted_fields=extracted,
+        confidence=98.6 if fraud_res["passed"] else 45.0,
+        status=status
+    )

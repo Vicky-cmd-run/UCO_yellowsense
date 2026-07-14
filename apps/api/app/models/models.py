@@ -48,6 +48,10 @@ class Customer(Base):
     sentiment = Column(String(20), default="NEUTRAL")  # POSITIVE, NEUTRAL, NEGATIVE
     churn_risk = Column(Integer, default=0)  # 0-100
     lead_propensity = Column(Integer, default=0)  # 0-100
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    fraud_check_status = Column(String(50), default="PASSED")
+    security_alerts_count = Column(Integer, default=0)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -80,6 +84,8 @@ class CustomerProfile(Base):
     employee_count = Column(Integer, nullable=True)
     preferred_language = Column(String(50), default="English")
     preferred_channel = Column(String(50), default="EMAIL")  # EMAIL, SMS, CALL, WHATSAPP
+    kcc_eligible = Column(Boolean, default=False)
+    msme_scheme_qualified = Column(String(100), nullable=True)
     
     customer = relationship("Customer", back_populates="profile")
 
@@ -135,6 +141,14 @@ class Visit(Base):
     check_out_at = Column(DateTime, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    checkout_latitude = Column(Float, nullable=True)
+    checkout_longitude = Column(Float, nullable=True)
+    claimed_distance_km = Column(Float, default=0.0)
+    claimed_duration_mins = Column(Float, default=0.0)
+    system_distance_km = Column(Float, default=0.0)
+    system_duration_mins = Column(Float, default=0.0)
+    declared_route = Column(String(200), nullable=True)
+    variance_flag = Column(Boolean, default=False)
     geo_verified = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
     status = Column(String(20), default="SCHEDULED")  # SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
@@ -153,6 +167,8 @@ class NeedAssessment(Base):
     pos_qr_need = Column(Boolean, default=False)
     salary_account_need = Column(Boolean, default=False)
     insurance_need = Column(Boolean, default=False)
+    agricultural_need = Column(Boolean, default=False)
+    scheme_matching_need = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
     
     visit = relationship("Visit", back_populates="need_assessment")
@@ -274,3 +290,28 @@ class AuditEvent(Base):
     before_state = Column(Text, nullable=True)  # JSON string
     after_state = Column(Text, nullable=True)  # JSON string
     timestamp = Column(DateTime, default=datetime.utcnow)
+    hash = Column(String(64), nullable=True)
+    previous_hash = Column(String(64), nullable=True)
+
+    @classmethod
+    def create_secured(cls, db, actor_id, action, entity_type, entity_id, before_state=None, after_state=None):
+        import hashlib
+        latest = db.query(cls).order_by(cls.timestamp.desc()).first()
+        prev_hash = latest.hash if (latest and latest.hash) else ("0" * 64)
+        
+        ae = cls(
+            actor_id=actor_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            before_state=before_state,
+            after_state=after_state,
+            previous_hash=prev_hash
+        )
+        
+        # Calculate hash
+        data_str = f"{actor_id}|{action}|{entity_type}|{entity_id}|{before_state}|{after_state}|{prev_hash}"
+        ae.hash = hashlib.sha256(data_str.encode('utf-8')).hexdigest()
+        
+        db.add(ae)
+        return ae

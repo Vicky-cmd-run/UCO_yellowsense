@@ -76,14 +76,14 @@ def create_query(
     db.refresh(query)
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="QUERY_ROUTED",
         entity_type="Query",
         entity_id=query.id,
         after_state=f"Inbound query received over {data.source_channel}. Auto-detected intent: {intent}. Urgency: {urgency}."
     )
-    db.add(audit)
     db.commit()
     
     return query

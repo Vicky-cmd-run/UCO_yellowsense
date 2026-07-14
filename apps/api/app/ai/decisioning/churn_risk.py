@@ -20,10 +20,24 @@ def calculate_churn_risk(customer: Any) -> Dict[str, Any]:
     score = 15  # base risk
     reason_codes = []
     
+    # Check accounts for low balances / zero salary credits
+    has_zero_balance = False
+    if hasattr(customer, 'accounts') and customer.accounts:
+        savings_balances = [acc.balance for acc in customer.accounts if acc.account_type in ['Savings', 'Current']]
+        if savings_balances and sum(savings_balances) <= 5000:
+            has_zero_balance = True
+            score += 35
+            reason_codes.append({"code": "BALANCE_DROPPED_65", "impact": "negative", "contribution": 35})
+            
+    # Check if they have stop salary credit indicator (simulated for negative/inactive users)
+    if customer.sentiment == "NEGATIVE" and customer.digital_engagement_score < 50:
+        score += 25
+        reason_codes.append({"code": "SALARY_STOPPED", "impact": "negative", "contribution": 25})
+        
     # Check sentiment
     if customer.sentiment == "NEGATIVE":
-        score += 30
-        reason_codes.append({"code": "NEGATIVE_SENTIMENT", "impact": "negative", "contribution": 30})
+        score += 20
+        reason_codes.append({"code": "NEGATIVE_SENTIMENT", "impact": "negative", "contribution": 20})
     elif customer.sentiment == "NEUTRAL":
         score += 10
         

@@ -24,6 +24,8 @@ class ProfileResponse(BaseModel):
     employee_count: int | None
     preferred_language: str
     preferred_channel: str
+    kcc_eligible: bool | None
+    msme_scheme_qualified: str | None
 
     class Config:
         from_attributes = True
@@ -47,6 +49,8 @@ class CustomerListItem(BaseModel):
     lead_propensity: int
     assigned_rm_id: str | None
     assigned_vrm_id: str | None
+    latitude: float | None
+    longitude: float | None
 
     class Config:
         from_attributes = True
@@ -72,10 +76,22 @@ class HoldingResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ConsentResponse(BaseModel):
+    id: str
+    channel: str
+    purpose: str
+    granted: bool
+    captured_at: datetime
+    revoked_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
 class CustomerDetailResponse(CustomerListItem):
     profile: ProfileResponse | None
     accounts: List[AccountResponse]
     product_holdings: List[HoldingResponse]
+    consents: List[ConsentResponse]
 
     class Config:
         from_attributes = True

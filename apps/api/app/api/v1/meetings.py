@@ -66,14 +66,14 @@ def create_meeting(
     db.refresh(meeting)
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="MEETING_SCHEDULED",
         entity_type="Meeting",
         entity_id=meeting.id,
         after_state=f"Meeting scheduled for customer {customer.full_name} regarding {data.purpose}."
     )
-    db.add(audit)
     db.commit()
     
     return meeting
@@ -106,14 +106,14 @@ def generate_meeting_intelligence(
     db.refresh(meeting)
     
     # Audit log
-    audit = AuditEvent(
+    AuditEvent.create_secured(
+        db,
         actor_id=current_user.employee_id,
         action="MEETING_INTELLIGENCE_GENERATED",
         entity_type="Meeting",
         entity_id=meeting.id,
         after_state=f"Meeting intelligence generated. Sentiment: {meeting.sentiment}."
     )
-    db.add(audit)
     db.commit()
     
     return meeting

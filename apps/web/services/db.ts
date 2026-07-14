@@ -10,6 +10,12 @@ export interface LocalVisit {
   check_out_at?: string;
   latitude?: number;
   longitude?: number;
+  checkout_latitude?: number;
+  checkout_longitude?: number;
+  claimed_distance_km?: number;
+  claimed_duration_mins?: number;
+  declared_route?: string;
+  variance_flag?: boolean;
   geo_verified?: boolean;
   notes?: string;
   status: string;
