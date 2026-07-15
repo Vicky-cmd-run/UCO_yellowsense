@@ -10,6 +10,18 @@ import {
   Shield, CheckSquare, Plus, FileText, ArrowLeft, Bot,
   Award, Loader2, Sparkles, Phone, User, AlertCircle
 } from 'lucide-react';
+import { DEMO_VISITS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 interface PageProps {
   params: Promise<{ visitId: string }>;
@@ -97,26 +109,50 @@ export default function VisitExecutionWizard({ params }: PageProps) {
     async function loadVisitAndCustomer() {
       setLoading(true);
       setError('');
-      try {
-        const visits = await apiService.fetchVisits();
-        const foundVisit = visits.find((v: any) => v.id === visitId);
+      // try {
+      //   const visits = await apiService.fetchVisits();
+      //   const foundVisit = visits.find((v: any) => v.id === visitId);
         
+      //   if (!foundVisit) {
+      //     setError('Scheduled visit not found.');
+      //     setLoading(false);
+      //     return;
+      //   }
+        
+      //   setVisit(foundVisit);
+        
+      //   // Fetch customer details
+      //   const custData = await apiService.fetchCustomerById(foundVisit.customer_id);
+      //   setCustomer(custData);
+      try {
+        // Sourced from the same DEMO_VISITS dataset the Field Desk list uses,
+        // so ids always match. The live /visits API is seeded with unrelated
+        // UUIDs and will never contain these demo visit ids.
+        const foundVisit = DEMO_VISITS.find((v: any) => v.id === visitId);
+
         if (!foundVisit) {
           setError('Scheduled visit not found.');
           setLoading(false);
           return;
         }
-        
-        setVisit(foundVisit);
-        
-        // Fetch customer details
-        const custData = await apiService.fetchCustomerById(foundVisit.customer_id);
-        setCustomer(custData);
+
+        // DEMO_VISITS stores coords as `coordinates: { lat, lng }`, but the
+        // rest of this component (handleCheckIn, handleCompleteVisit, the
+        // geoCoords UI) expects flat latitude/longitude — normalize once here.
+        const normalizedVisit: VisitData = {
+          ...(foundVisit as any),
+          latitude: (foundVisit as any).latitude ?? (foundVisit as any).coordinates?.lat,
+          longitude: (foundVisit as any).longitude ?? (foundVisit as any).coordinates?.lng,
+        };
+        setVisit(normalizedVisit);
+
+        const custData = DEMO_CUSTOMERS.find((c: any) => c.id === foundVisit.customer_id) || (foundVisit as any).customer;
+        setCustomer(custData as CustomerData);
 
         // Map status changes if already checked in
-        if (foundVisit.status === 'IN_PROGRESS' || foundVisit.check_in_at) {
+        if (normalizedVisit.status === 'IN_PROGRESS' || normalizedVisit.check_in_at) {
           setCheckedIn(true);
-          setGeoCoords({ lat: foundVisit.latitude || 12.9716, lng: foundVisit.longitude || 77.5946 });
+          setGeoCoords({ lat: normalizedVisit.latitude || 12.9716, lng: normalizedVisit.longitude || 77.5946 });
         }
       } catch (err: any) {
         console.error(err);
@@ -129,19 +165,53 @@ export default function VisitExecutionWizard({ params }: PageProps) {
     loadVisitAndCustomer();
   }, [visitId]);
 
+  // // Step 1: Check In Execution
+  // const handleCheckIn = async () => {
+  //   setCheckingIn(true);
+  //   try {
+  //     // Simulate geolocation retrieval
+  //     const lat = 12.9716 + (Math.random() - 0.5) * 0.005;
+  //     const lng = 77.5946 + (Math.random() - 0.5) * 0.005;
+      
+  //     const updatedVisit = await apiService.checkInVisit(visitId, lat, lng);
+  //     setGeoCoords({ lat, lng });
+  //     setCheckedIn(true);
+  //     if (visit) {
+  //       setVisit({ ...visit, status: 'IN_PROGRESS', check_in_at: new Date().toISOString() });
+  //     }
+      
+  //     // Auto advance step
+  //     setTimeout(() => setCurrentStep(2), 1200);
+  //   } catch (err: any) {
+  //     console.error(err);
+  //     alert('Failed to register check-in: ' + err.message);
+  //   } finally {
+  //     setCheckingIn(false);
+  //   }
+  // };
   // Step 1: Check In Execution
   const handleCheckIn = async () => {
     setCheckingIn(true);
     try {
-      // Simulate geolocation retrieval
+      // Simulate geolocation retrieval + a network round-trip. Demo visits
+      // (v001-v005) aren't persisted server-side, so this stays local
+      // instead of calling apiService.checkInVisit — that endpoint 404s on
+      // any id it doesn't recognize.
       const lat = 12.9716 + (Math.random() - 0.5) * 0.005;
       const lng = 77.5946 + (Math.random() - 0.5) * 0.005;
-      
-      const updatedVisit = await apiService.checkInVisit(visitId, lat, lng);
+      await new Promise(r => setTimeout(r, 700));
+
       setGeoCoords({ lat, lng });
       setCheckedIn(true);
       if (visit) {
-        setVisit({ ...visit, status: 'IN_PROGRESS', check_in_at: new Date().toISOString() });
+        setVisit({
+          ...visit,
+          status: 'IN_PROGRESS',
+          check_in_at: new Date().toISOString(),
+          latitude: lat,
+          longitude: lng,
+          geo_verified: true,
+        });
       }
       
       // Auto advance step
@@ -216,6 +286,29 @@ export default function VisitExecutionWizard({ params }: PageProps) {
     }
   };
 
+  // // Step 7: Create Lead helper
+  // const handleCreateLead = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   if (!customer) return;
+  //   if (!leadProduct || !leadValue) {
+  //     alert('Provide both product and value.');
+  //     return;
+  //   }
+
+  //   setCreatingLead(true);
+  //   try {
+  //     const val = parseFloat(leadValue);
+  //     await apiService.createLead(customer.id, 'FIELD_VISIT', leadProduct, isNaN(val) ? 50000 : val, activeUser?.id || null);
+  //     setNewLeadCreated(true);
+  //     alert('Lead successfully queued / created for ' + leadProduct);
+  //     setCurrentStep(8);
+  //   } catch (err: any) {
+  //     console.error(err);
+  //     alert('Failed to generate lead: ' + err.message);
+  //   } finally {
+  //     setCreatingLead(false);
+  //   }
+  // };
   // Step 7: Create Lead helper
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,8 +320,10 @@ export default function VisitExecutionWizard({ params }: PageProps) {
 
     setCreatingLead(true);
     try {
-      const val = parseFloat(leadValue);
-      await apiService.createLead(customer.id, 'FIELD_VISIT', leadProduct, isNaN(val) ? 50000 : val, activeUser?.id || null);
+      // Simulated lead creation — demo customers (c001, etc.) don't exist as
+      // rows in the live database, so apiService.createLead would 404.
+      // Stays local, matching how the Field Desk simulates scheduling.
+      await new Promise(r => setTimeout(r, 900));
       setNewLeadCreated(true);
       alert('Lead successfully queued / created for ' + leadProduct);
       setCurrentStep(8);
@@ -240,6 +335,41 @@ export default function VisitExecutionWizard({ params }: PageProps) {
     }
   };
 
+  // // Step 8: Complete Visit submission
+  // const handleCompleteVisit = async () => {
+  //   setSubmittingComplete(true);
+  //   try {
+  //     // Simulate checkout coordinates by offsetting check-in coordinates slightly
+  //     const checkoutLat = visit?.latitude ? visit.latitude + 0.008 : 12.9796;
+  //     const checkoutLng = visit?.longitude ? visit.longitude + 0.008 : 77.6026;
+      
+  //     const claimedDist = parseFloat(claimedDistance) || 0.0;
+  //     const claimedDur = parseFloat(claimedDuration) || 0.0;
+      
+  //     const res = await apiService.completeVisit(
+  //       visitId, 
+  //       needAssessment, 
+  //       notes, 
+  //       checkoutLat, 
+  //       checkoutLng, 
+  //       claimedDist, 
+  //       claimedDur, 
+  //       declaredRoute || 'Unspecified Direct Route'
+  //     );
+      
+  //     if (res.variance_flag) {
+  //       alert('⚠ Audit Warning: Travel claims variance detected! Your claimed distance/duration exceeds the system GPS-tracked calculations by more than 20%. This has been logged in the cryptographic ledger for audit review.');
+  //     } else {
+  //       alert('✓ Field visit and travel claims validated successfully! Saved to cryptographic audit ledger.');
+  //     }
+  //     router.push('/zrt');
+  //   } catch (err: any) {
+  //     console.error(err);
+  //     alert('Could not complete visit sync: ' + err.message);
+  //   } finally {
+  //     setSubmittingComplete(false);
+  //   }
+  // };
   // Step 8: Complete Visit submission
   const handleCompleteVisit = async () => {
     setSubmittingComplete(true);
@@ -250,19 +380,26 @@ export default function VisitExecutionWizard({ params }: PageProps) {
       
       const claimedDist = parseFloat(claimedDistance) || 0.0;
       const claimedDur = parseFloat(claimedDuration) || 0.0;
-      
-      const res = await apiService.completeVisit(
-        visitId, 
-        needAssessment, 
-        notes, 
-        checkoutLat, 
-        checkoutLng, 
-        claimedDist, 
-        claimedDur, 
-        declaredRoute || 'Unspecified Direct Route'
-      );
-      
-      if (res.variance_flag) {
+
+      await new Promise(r => setTimeout(r, 900));
+
+      // Replicate the backend's travel-claim variance check locally, since
+      // demo visits aren't persisted server-side and completeVisit() would 404.
+      const systemDistKm = visit?.latitude && visit?.longitude
+        ? haversineKm(visit.latitude, visit.longitude, checkoutLat, checkoutLng)
+        : 0;
+      const durationMins = visit?.check_in_at
+        ? (Date.now() - new Date(visit.check_in_at).getTime()) / 60000
+        : 0;
+      const varianceFlag =
+        (claimedDist > 0 && claimedDist > systemDistKm * 1.2) ||
+        (claimedDur > 0 && claimedDur > durationMins * 1.2);
+
+      if (visit) {
+        setVisit({ ...visit, status: 'COMPLETED', check_out_at: new Date().toISOString(), notes });
+      }
+
+      if (varianceFlag) {
         alert('⚠ Audit Warning: Travel claims variance detected! Your claimed distance/duration exceeds the system GPS-tracked calculations by more than 20%. This has been logged in the cryptographic ledger for audit review.');
       } else {
         alert('✓ Field visit and travel claims validated successfully! Saved to cryptographic audit ledger.');
@@ -313,8 +450,7 @@ export default function VisitExecutionWizard({ params }: PageProps) {
   ];
 
   return (
-    <div className="max-w-md mx-auto flex flex-col min-h-[85vh] bg-surface border border-border-warm rounded-[28px] overflow-hidden shadow-2xl relative">
-      {/* Smartphone Top Notch indicator */}
+    <div className="max-w-md mx-auto flex flex-col h-[720px] bg-surface border border-border-warm rounded-[28px] overflow-hidden shadow-2xl relative">      {/* Smartphone Top Notch indicator */}
       <div className="w-full h-6 bg-navy text-white flex justify-between items-center px-6 text-[10px] font-bold select-none">
         <span>9:41 AM</span>
         <div className="w-20 h-4 bg-navy rounded-b-xl mx-auto absolute left-1/2 -translate-x-1/2 top-0 flex items-center justify-center">
@@ -371,7 +507,8 @@ export default function VisitExecutionWizard({ params }: PageProps) {
       </div>
 
       {/* Main Form Content Scrollable */}
-      <main className="flex-1 p-5 overflow-y-auto space-y-4">
+      <main className="flex-1 flex flex-col p-5 overflow-y-auto">
+        <div className="m-auto w-full space-y-4">
         {/* STEP 1: CHECK IN */}
         {currentStep === 1 && (
           <div className="space-y-4 text-center py-4">
@@ -888,6 +1025,7 @@ export default function VisitExecutionWizard({ params }: PageProps) {
             </div>
           </div>
         )}
+        </div>
       </main>
 
       {/* Smartphone Bottom Actions footer (Step Navigator) */}

@@ -4,12 +4,20 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DEMO_CUSTOMERS, COPILOT_RESPONSES } from '@/services/DEMO_DATA';
 import { Bot, Send, User, Sparkles, ChevronRight, Layers, BarChart2, ShieldAlert, MessageSquare } from 'lucide-react';
 
+// interface Message {
+//   sender: 'bot' | 'user';
+//   text: string;
+//   timestamp: Date;
+//   confidence?: number;
+//   sources?: string[];
+// }
 interface Message {
   sender: 'bot' | 'user';
   text: string;
   timestamp: Date;
   confidence?: number;
   sources?: string[];
+  isContext?: boolean;
 }
 
 const SUGGESTED_PROMPTS = [
@@ -89,16 +97,32 @@ export default function AICopilotPage() {
     setThinking(false);
   };
 
+  // const handleCustomerSelect = (id: string) => {
+  //   setSelectedId(id);
+  //   const cust = DEMO_CUSTOMERS.find(c => c.id === id)!;
+  //   setMessages(prev => [...prev, {
+  //     sender: 'bot',
+  //     text: `Context loaded: **${cust.full_name}** (${cust.segment}). Relationship value: **₹${(cust.relationship_value / 100000).toFixed(1)}L**. Churn risk: **${cust.churn_risk}%**. Lead propensity: **${cust.lead_propensity}%**. How can I assist you with this portfolio account?`,
+  //     timestamp: new Date(),
+  //     confidence: 95,
+  //     sources: ['Customer 360 Profile', 'Risk Engine'],
+  //   }]);
+  // };
   const handleCustomerSelect = (id: string) => {
     setSelectedId(id);
     const cust = DEMO_CUSTOMERS.find(c => c.id === id)!;
-    setMessages(prev => [...prev, {
-      sender: 'bot',
-      text: `Context loaded: **${cust.full_name}** (${cust.segment}). Relationship value: **₹${(cust.relationship_value / 100000).toFixed(1)}L**. Churn risk: **${cust.churn_risk}%**. Lead propensity: **${cust.lead_propensity}%**. How can I assist you with this portfolio account?`,
-      timestamp: new Date(),
-      confidence: 95,
-      sources: ['Customer 360 Profile', 'Risk Engine'],
-    }]);
+    // Switching customer starts a fresh conversation scoped to that account —
+    // don't carry over Q&A from whichever customer was selected before.
+    setMessages([
+      {
+        sender: 'bot',
+        text: `Context loaded: **${cust.full_name}** (${cust.segment}). Relationship value: **₹${(cust.relationship_value / 100000).toFixed(1)}L**. Churn risk: **${cust.churn_risk}%**. Lead propensity: **${cust.lead_propensity}%**. How can I assist you with this portfolio account?`,
+        timestamp: new Date(),
+        confidence: 95,
+        sources: ['Customer 360 Profile', 'Risk Engine'],
+        isContext: true,
+      },
+    ]);
   };
 
   return (
