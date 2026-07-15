@@ -6,6 +6,19 @@ import { useDemoStore } from '../../../stores/demoStore';
 import { apiService } from '../../../services/api';
 import { ShieldCheck, UserCheck, AlertCircle } from 'lucide-react';
 
+function getRouteForRole(role: string) {
+  switch (role) {
+    case 'ZRT_OFFICER': return '/zrt';
+    case 'RM': return '/rm';
+    case 'VRM': return '/vrm';
+    case 'BRANCH_MANAGER':
+    case 'REGIONAL_MANAGER':
+    case 'HEAD_OFFICE':
+    case 'ADMIN':
+    default: return '/executive';
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { setActiveUser, setAccessToken, activeUser } = useDemoStore();
@@ -18,7 +31,7 @@ export default function LoginPage() {
   useEffect(() => {
     // If already logged in, go to command center
     if (activeUser) {
-      router.push('/executive');
+      router.push(getRouteForRole(activeUser.role));
       return;
     }
 
@@ -48,8 +61,10 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      await apiService.login(email, password);
-      router.push('/executive');
+      // await apiService.login(email, password);
+      // router.push('/executive');
+      const data = await apiService.login(email, password);
+      router.push(getRouteForRole(data.user.role));
     } catch (err: any) {
       setError(err.message || 'Invalid credentials');
     } finally {
@@ -62,7 +77,7 @@ export default function LoginPage() {
     setError('');
     try {
       await apiService.login(user.email, 'password123');
-      router.push('/executive');
+      router.push(getRouteForRole(user.role));
     } catch (err: any) {
       // Fallback local auth bypass for frontend development
       console.warn('Backend login failed, logging in locally:', err);
