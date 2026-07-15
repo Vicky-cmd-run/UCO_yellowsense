@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DEMO_ANALYTICS, DEMO_LEADS, DEMO_VISITS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
-import {
+import { getExecutiveAnalytics, DEMO_LEADS, DEMO_VISITS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';import {
   TrendingUp, Target, Users, BarChart2, CheckCircle,
   Calendar, Award, ArrowUpRight
 } from 'lucide-react';
@@ -36,7 +35,7 @@ const MONTHLY_TREND = [
 
 export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'executive' | 'sales' | 'digital'>('executive');
-  const data = DEMO_ANALYTICS.executive;
+  const data = getExecutiveAnalytics({ role: 'HEAD_OFFICE' });
   const totalPipelineValue = DEMO_LEADS.filter(l => l.stage !== 'Lost').reduce((s, l) => s + l.potential_value, 0);
 
   return (

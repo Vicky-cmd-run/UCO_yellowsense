@@ -333,40 +333,129 @@ export const DEMO_NOTIFICATIONS = [
 ];
 
 // ─── ANALYTICS ────────────────────────────────────────────────────────────────
-export const DEMO_ANALYTICS = {
-  executive: {
-    kpis: {
-      relationship_value: { value: 108000000, trend: '+12.4%', comparison: 'vs last quarter' },
-      active_customers: { value: 312, trend: '+3.1%', comparison: 'vs last month' },
-      high_priority_opportunities: { value: 24, trend: '+8.2%', comparison: 'vs last week' },
-      conversion_rate: { value: 64.2, trend: '+2.1%', comparison: 'vs last month' },
-      business_mobilized: { value: 48000000, trend: '+18.5%', comparison: 'vs last quarter' },
-      customers_at_risk: { value: 18, trend: '-1.2%', comparison: 'vs last week' },
-    },
-    business_mobilization_trend: [
-      { date: 'Jan 26', mobilized: 5200000, target: 4000000 },
-      { date: 'Feb 26', mobilized: 6800000, target: 5000000 },
-      { date: 'Mar 26', mobilized: 9500000, target: 7000000 },
-      { date: 'Apr 26', mobilized: 8200000, target: 8000000 },
-      { date: 'May 26', mobilized: 11400000, target: 9000000 },
-      { date: 'Jun 26', mobilized: 13000000, target: 10000000 },
-      { date: 'Jul 26', mobilized: 48000000, target: 42000000 },
-    ],
-    lead_funnel: [
-      { stage: 'New', count: 28, value: 52000000 },
-      { stage: 'Contacted', count: 19, value: 38000000 },
-      { stage: 'In Progress', count: 12, value: 26000000 },
-      { stage: 'Proposal', count: 8, value: 18000000 },
-      { stage: 'Converted', count: 5, value: 11000000 },
-    ],
-    regional_performance: [
-      { region: 'Chennai Central', value: 43200000, rank: 1, customers: 145, leads: 38 },
-      { region: 'Coimbatore Main', value: 27000000, rank: 2, customers: 89, leads: 22 },
-      { region: 'Bengaluru Indiranagar', value: 21600000, rank: 3, customers: 67, leads: 18 },
-      { region: 'Hyderabad Gachibowli', value: 16200000, rank: 4, customers: 51, leads: 14 },
-    ],
-  },
+// export const DEMO_ANALYTICS = {
+//   executive: {
+//     kpis: {
+//       relationship_value: { value: 108000000, trend: '+12.4%', comparison: 'vs last quarter' },
+//       active_customers: { value: 312, trend: '+3.1%', comparison: 'vs last month' },
+//       high_priority_opportunities: { value: 24, trend: '+8.2%', comparison: 'vs last week' },
+//       conversion_rate: { value: 64.2, trend: '+2.1%', comparison: 'vs last month' },
+//       business_mobilized: { value: 48000000, trend: '+18.5%', comparison: 'vs last quarter' },
+//       customers_at_risk: { value: 18, trend: '-1.2%', comparison: 'vs last week' },
+//     },
+//     business_mobilization_trend: [
+//       { date: 'Jan 26', mobilized: 5200000, target: 4000000 },
+//       { date: 'Feb 26', mobilized: 6800000, target: 5000000 },
+//       { date: 'Mar 26', mobilized: 9500000, target: 7000000 },
+//       { date: 'Apr 26', mobilized: 8200000, target: 8000000 },
+//       { date: 'May 26', mobilized: 11400000, target: 9000000 },
+//       { date: 'Jun 26', mobilized: 13000000, target: 10000000 },
+//       { date: 'Jul 26', mobilized: 48000000, target: 42000000 },
+//     ],
+//     lead_funnel: [
+//       { stage: 'New', count: 28, value: 52000000 },
+//       { stage: 'Contacted', count: 19, value: 38000000 },
+//       { stage: 'In Progress', count: 12, value: 26000000 },
+//       { stage: 'Proposal', count: 8, value: 18000000 },
+//       { stage: 'Converted', count: 5, value: 11000000 },
+//     ],
+//     regional_performance: [
+//       { region: 'Chennai Central', value: 43200000, rank: 1, customers: 145, leads: 38 },
+//       { region: 'Coimbatore Main', value: 27000000, rank: 2, customers: 89, leads: 22 },
+//       { region: 'Bengaluru Indiranagar', value: 21600000, rank: 3, customers: 67, leads: 18 },
+//       { region: 'Hyderabad Gachibowli', value: 16200000, rank: 4, customers: 51, leads: 14 },
+//     ],
+//   },
+// };
+// ─── ANALYTICS (role/branch/region scoped) ────────────────────────────────────
+export const BRANCH_REGION_MAP: Record<string, string> = {
+  'Chennai Central': 'South',
+  'Coimbatore Main': 'South',
+  'Madurai North': 'South',
+  'Bengaluru Indiranagar': 'West',
+  'Hyderabad Gachibowli': 'West',
 };
+
+export function getExecutiveAnalytics(scope: { role?: string; branchId?: string | null; regionId?: string | null }) {
+  const inScope = (c: typeof DEMO_CUSTOMERS[number]) => {
+    if (scope.role === 'BRANCH_MANAGER') return c.branch_id === scope.branchId;
+    // if (scope.role === 'REGIONAL_HEAD') return BRANCH_REGION_MAP[c.branch_id] === scope.regionId;
+    if (scope.role === 'REGIONAL_MANAGER') return BRANCH_REGION_MAP[c.branch_id] === scope.regionId;
+    return true; // HEAD_OFFICE = national
+  };
+
+  const customers = DEMO_CUSTOMERS.filter(inScope);
+  const leads = DEMO_LEADS.filter(l => {
+    const cust = DEMO_CUSTOMERS.find(c => c.id === l.customer_id);
+    return cust ? inScope(cust) : false;
+  });
+
+  const relationship_value = customers.reduce((s, c) => s + c.relationship_value, 0);
+  const active_customers = customers.filter(c => c.lifecycle_stage === 'ACTIVE').length;
+  const customers_at_risk = customers.filter(c => c.churn_risk >= 60).length;
+  const high_priority_opportunities = leads.filter(l => l.priority === 'HIGH').length;
+  const converted = leads.filter(l => l.stage === 'Converted').length;
+  const lost = leads.filter(l => l.stage === 'Lost').length;
+  const conversion_rate = (converted + lost) ? Math.round((converted / (converted + lost)) * 1000) / 10 : 0;
+  const business_mobilized = leads.filter(l => l.stage === 'Converted').reduce((s, l) => s + l.potential_value, 0);
+
+  const nationalTotal = DEMO_CUSTOMERS.reduce((s, c) => s + c.relationship_value, 0);
+  const scopeShare = nationalTotal ? relationship_value / nationalTotal : 1;
+  const NATIONAL_TREND = [
+    { date: 'Jan 26', mobilized: 5200000, target: 4000000 },
+    { date: 'Feb 26', mobilized: 6800000, target: 5000000 },
+    { date: 'Mar 26', mobilized: 9500000, target: 7000000 },
+    { date: 'Apr 26', mobilized: 8200000, target: 8000000 },
+    { date: 'May 26', mobilized: 11400000, target: 9000000 },
+    { date: 'Jun 26', mobilized: 13000000, target: 10000000 },
+    { date: 'Jul 26', mobilized: 48000000, target: 42000000 },
+  ];
+  const business_mobilization_trend = NATIONAL_TREND.map(p => ({
+    date: p.date,
+    mobilized: Math.round(p.mobilized * scopeShare),
+    target: Math.round(p.target * scopeShare),
+  }));
+
+  const STAGES = ['New', 'Contacted', 'In Progress', 'Proposal', 'Converted'];
+  const lead_funnel = STAGES.map(stage => {
+    const inStage = leads.filter(l => l.stage === stage);
+    return { stage, count: inStage.length, value: inStage.reduce((s, l) => s + l.potential_value, 0) };
+  });
+
+  const regional_performance = Object.entries(
+    customers.reduce((acc: Record<string, { value: number; customers: number }>, c) => {
+      acc[c.branch_id] = acc[c.branch_id] || { value: 0, customers: 0 };
+      acc[c.branch_id].value += c.relationship_value;
+      acc[c.branch_id].customers += 1;
+      return acc;
+    }, {})
+  )
+    .map(([region, v]) => ({
+      region, value: v.value, customers: v.customers,
+      leads: leads.filter(l => DEMO_CUSTOMERS.find(c => c.id === l.customer_id)?.branch_id === region).length,
+    }))
+    .sort((a, b) => b.value - a.value)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
+
+  const last = business_mobilization_trend[business_mobilization_trend.length - 1];
+  const vsTarget = last.target ? Math.round(((last.mobilized - last.target) / last.target) * 1000) / 10 : 0;
+
+  return {
+    kpis: {
+      relationship_value: { value: relationship_value, trend: '+12.4%', comparison: 'vs last quarter' },
+      active_customers: { value: active_customers, trend: '+3.1%', comparison: 'vs last month' },
+      high_priority_opportunities: { value: high_priority_opportunities, trend: '+8.2%', comparison: 'vs last week' },
+      conversion_rate: { value: conversion_rate, trend: '+2.1%', comparison: 'vs last month' },
+      business_mobilized: { value: Math.round(business_mobilized), trend: '+18.5%', comparison: 'vs last quarter' },
+      customers_at_risk: { value: customers_at_risk, trend: '-1.2%', comparison: 'vs last week' },
+    },
+    business_mobilization_trend,
+    lead_funnel,
+    regional_performance,
+    vsTargetLabel: `${vsTarget >= 0 ? '+' : ''}${vsTarget}% vs Target`,
+    atRiskCustomers: customers.filter(c => c.churn_risk >= 60).sort((a, b) => b.churn_risk - a.churn_risk).slice(0, 5),
+  };
+}
 
 // ─── AUDIT EVENTS ─────────────────────────────────────────────────────────────
 export const DEMO_AUDIT_EVENTS = [

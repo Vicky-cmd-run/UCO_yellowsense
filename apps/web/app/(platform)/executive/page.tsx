@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useDemoStore } from '@/stores/demoStore';
-import { DEMO_ANALYTICS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
+import { getExecutiveAnalytics } from '@/services/DEMO_DATA';
 import {
   TrendingUp, Users, Target, Percent, Briefcase,
   AlertTriangle, ShieldAlert, CheckCircle2, ChevronRight,
@@ -27,10 +27,12 @@ export default function ExecutiveDashboard() {
   const [loading, setLoading] = useState(true);
 
   // Use hardcoded demo data — enrich with live data if API available
-  const data = DEMO_ANALYTICS.executive;
-  const atRiskCustomers = DEMO_CUSTOMERS.filter(c => c.churn_risk >= 60)
-    .sort((a, b) => b.churn_risk - a.churn_risk)
-    .slice(0, 5);
+  const data = getExecutiveAnalytics({
+    role: activeUser?.role,
+    branchId: activeUser?.branch_id,
+    regionId: activeUser?.region_id,
+  });
+const atRiskCustomers = data.atRiskCustomers;
 
   useEffect(() => {
     // Simulate brief loading for realism
@@ -114,8 +116,7 @@ export default function ExecutiveDashboard() {
               <h2 className="font-extrabold text-[#16263A]">Business Mobilization Trend</h2>
               <p className="text-xs text-[#6B7076] mt-0.5">Actual vs Target (₹ Lakhs) — July 2026</p>
             </div>
-            <span className="text-[10px] bg-emerald-100 text-emerald-700 font-extrabold px-2 py-1 rounded-full">+18.5% vs Target</span>
-          </div>
+            <span className="text-[10px] bg-emerald-100 text-emerald-700 font-extrabold px-2 py-1 rounded-full">{data.vsTargetLabel}</span>             </div>
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={data.business_mobilization_trend}>
               <defs>
