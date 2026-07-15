@@ -38,6 +38,8 @@ export const DEMO_CUSTOMERS = [
     holdings: [
       { id: 'h001', product: 'Cash Credit', amount: 12000000, interest_rate: 9.5, status: 'ACTIVE' },
       { id: 'h002', product: 'Term Loan', amount: 8000000, interest_rate: 10.2, status: 'ACTIVE' },
+      { id: 'h001d', product: 'Mobile Banking', amount: 0, interest_rate: 0, status: 'ACTIVE', category: 'DIGITAL' },
+      { id: 'h002d', product: 'UPI Merchant QR', amount: 0, interest_rate: 0, status: 'PENDING', category: 'DIGITAL' },
     ],
   },
   {

@@ -41,9 +41,28 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold text-[#16263A] tracking-tight">Analytics & Insights</h1>
-        <p className="text-[#6B7076] text-sm mt-1">Portfolio performance metrics · Branch intelligence · July 2026</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-extrabold text-[#16263A] tracking-tight">Analytics & Insights</h1>
+          <p className="text-[#6B7076] text-sm mt-1">Portfolio performance metrics · Branch intelligence · July 2026</p>
+        </div>
+        <button
+          onClick={() => {
+            const rows = data.regional_performance;
+            const headers = Object.keys(rows[0]);
+            const csv = [headers.join(','), ...rows.map((r: any) => headers.map(h => r[h]).join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mis_regional_report.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="flex items-center gap-2 bg-[#16263A] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#16263A]/90 transition-all shrink-0"
+        >
+          Download MIS Report
+        </button>
       </div>
 
       {/* Tab selector */}

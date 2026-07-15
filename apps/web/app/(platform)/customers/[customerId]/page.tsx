@@ -7,7 +7,7 @@ import {
   ArrowLeft, User, Phone, Mail, MapPin, Building2, Star,
   TrendingDown, Activity, ChevronRight, CheckCircle, XCircle,
   Briefcase, Calendar, MessageSquare, AlertTriangle, FileText,
-  Shield, ClipboardList, Bot, Sparkles, Check, X, ShieldAlert, CreditCard
+  Shield, ClipboardList, Bot, Sparkles, Check, X, ShieldAlert, CreditCard, Smartphone
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -20,6 +20,7 @@ const formatINR = (v: number) => {
 const TABS = [
   { id: 'overview', label: 'Overview', icon: User },
   { id: 'accounts', label: 'Accounts', icon: CreditCard },
+  { id: 'digital', label: 'Digital Adoption', icon: Smartphone },
   { id: 'leads', label: 'Leads', icon: TrendingDown },
   { id: 'visits', label: 'Visits', icon: MapPin },
   { id: 'meetings', label: 'Meetings', icon: Calendar },
@@ -63,6 +64,7 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
   const [customer, setCustomer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [consents, setConsents] = useState<any[]>([]);
+  const [reactivated, setReactivated] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadCustomer() {
@@ -302,19 +304,28 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
             {activeTab === 'accounts' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-extrabold text-[#16263A]">Accounts & Holdings ({(customer.accounts?.length || 0) + (customer.holdings?.length || 0)} products)</h3>
-                {customer.accounts?.map((acc: any) => (
+                {customer.accounts?.map((acc: any) => {
+                  const isReactivated = reactivated.includes(acc.id);
+                  const effectiveStatus = isReactivated ? 'ACTIVE' : acc.status;
+                  return (
                   <div key={acc.id} className="p-4 border border-[#E8DAAE] rounded-xl">
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <p className="font-extrabold text-[#16263A] text-sm">•••• {acc.account_number.slice(-4)} — {acc.account_type}</p>
                         <p className="text-xs text-[#6B7076]">{acc.branch} · IFSC: {acc.ifsc}</p>
                       </div>
-                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${acc.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{acc.status}</span>
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${effectiveStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : effectiveStatus === 'DORMANT' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{effectiveStatus === 'ACTIVE' && isReactivated ? 'REACTIVATED' : effectiveStatus}</span>
                     </div>
                     <p className={`text-lg font-extrabold ${(acc.balance || 0) < 0 ? 'text-red-600' : 'text-[#16263A]'}`}>{formatINR(Math.abs(acc.balance || 0))} {(acc.balance || 0) < 0 ? '(Utilized)' : ''}</p>
                     {acc.limit && <p className="text-xs text-[#6B7076] mt-0.5">Limit: {formatINR(acc.limit)}</p>}
+                    {acc.status === 'DORMANT' && !isReactivated && (
+                      <button onClick={() => setReactivated(prev => [...prev, acc.id])} className="mt-2 text-[10px] font-extrabold text-[#16263A] border border-[#16263A] px-2 py-1 rounded-lg hover:bg-[#16263A] hover:text-white transition-all">
+                        Convert to Active
+                      </button>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
                 {customer.holdings?.map((h: any) => (
                   <div key={h.id} className="p-4 border border-[#E8DAAE] rounded-xl">
                     <div className="flex justify-between items-start mb-2">
@@ -327,6 +338,21 @@ export default function Customer360Page({ params }: { params: Promise<{ customer
                 ))}
                 {(!customer.accounts?.length && !customer.holdings?.length) && (
                   <p className="text-sm text-[#6B7076] text-center py-8">No accounts or holdings on record.</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'digital' && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-extrabold text-[#16263A] mb-4">Digital Product Adoption</h3>
+                {(customer.holdings || []).filter((h: any) => h.category === 'DIGITAL').map((h: any) => (
+                  <div key={h.id} className="flex items-center justify-between p-3 border border-[#E8DAAE] rounded-xl">
+                    <p className="text-xs font-bold text-[#16263A]">{h.product}</p>
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${h.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{h.status === 'ACTIVE' ? 'Activated' : 'Pending'}</span>
+                  </div>
+                ))}
+                {!(customer.holdings || []).some((h: any) => h.category === 'DIGITAL') && (
+                  <p className="text-sm text-[#6B7076] text-center py-8">No digital products tracked for this customer yet.</p>
                 )}
               </div>
             )}

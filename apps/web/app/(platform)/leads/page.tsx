@@ -33,8 +33,19 @@ export default function LeadsPage() {
   const [newValue, setNewValue] = useState('');
   const [newSource, setNewSource] = useState('RM');
   const [movingLead, setMovingLead] = useState<string | null>(null);
+  const [crossSellOnly, setCrossSellOnly] = useState(false);
 
-  const stageLeads = (stage: string) => leads.filter(l => l.stage === stage);
+  const customerById = React.useMemo(
+    () => Object.fromEntries(DEMO_CUSTOMERS.map(c => [c.id, c])),
+    []
+  );
+  const isCrossSell = (lead: typeof leads[number]) => {
+    const cust = customerById[lead.customer_id];
+    return !!(cust && cust.holdings && cust.holdings.length > 0);
+  };
+  const visibleLeads = crossSellOnly ? leads.filter(isCrossSell) : leads;
+
+  const stageLeads = (stage: string) => visibleLeads.filter(l => l.stage === stage);
   const stageTotal = (stage: string) => stageLeads(stage).reduce((s, l) => s + l.potential_value, 0);
 
   const moveStage = (leadId: string, newStage: string) => {
@@ -71,8 +82,7 @@ export default function LeadsPage() {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-2xl font-extrabold text-[#16263A] tracking-tight">Lead Pipeline</h1>
-          <p className="text-[#6B7076] text-sm mt-1">{leads.length} leads · {formatINR(leads.filter(l => l.stage !== 'Lost').reduce((s, l) => s + l.potential_value, 0))} total potential value</p>
-        </div>
+          <p className="text-[#6B7076] text-sm mt-1">{visibleLeads.length} leads{crossSellOnly ? ' (cross-sell only)' : ''} · {formatINR(visibleLeads.filter(l => l.stage !== 'Lost').reduce((s, l) => s + l.potential_value, 0))} total potential value</p>        </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setView('kanban')} className={`p-2 rounded-xl border text-xs font-bold transition-all ${view === 'kanban' ? 'bg-[#16263A] text-white border-[#16263A]' : 'border-[#E8DAAE] text-[#6B7076]'}`}>
             <LayoutGrid className="w-4 h-4" />
@@ -80,9 +90,16 @@ export default function LeadsPage() {
           <button onClick={() => setView('table')} className={`p-2 rounded-xl border text-xs font-bold transition-all ${view === 'table' ? 'bg-[#16263A] text-white border-[#16263A]' : 'border-[#E8DAAE] text-[#6B7076]'}`}>
             <List className="w-4 h-4" />
           </button>
+          <button
+            onClick={() => setCrossSellOnly(v => !v)}
+            className={`flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-xl border transition-all ${crossSellOnly ? 'bg-[#F4A623] text-white border-[#F4A623]' : 'border-[#E8DAAE] text-[#6B7076]'}`}
+          >
+            <Target className="w-3.5 h-3.5" /> Cross-Sell Pipeline
+          </button>
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-[#16263A] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#16263A]/90 transition-all">
             <Plus className="w-3.5 h-3.5" /> Add Lead
           </button>
+
         </div>
       </div>
 
@@ -158,7 +175,7 @@ export default function LeadsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E8DAAE]">
-              {leads.map(lead => (
+              {visibleLeads.map(lead => (
                 <tr key={lead.id} className="hover:bg-[#FFF9ED] transition-colors">
                   <td className="px-4 py-3 font-bold text-[#16263A] text-xs">{lead.customer_name}</td>
                   <td className="px-4 py-3 text-xs text-[#29313A]">{lead.product}</td>

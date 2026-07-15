@@ -126,6 +126,9 @@ export default function ZRTCommandCenter() {
           <p className="text-[#6B7076] text-sm mt-1">
             {todayVisits.length} visits scheduled · {completedToday} completed today
           </p>
+          <p className="text-xs font-bold text-[#F4A623] mt-1">
+            Assigned Branch: {activeUser?.branch_id || 'Chennai Central'} · {visits.filter(v => v.customer?.branch_id === activeUser?.branch_id).length} visits this branch
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl ${networkStatus === 'Online' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
