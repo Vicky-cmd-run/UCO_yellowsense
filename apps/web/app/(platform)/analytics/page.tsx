@@ -9,6 +9,7 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
   BarChart, Bar, Cell, PieChart, Pie, Legend, Sector
 } from 'recharts';
+import { useDemoStore } from '@/stores/demoStore';
 
 const formatINR = (v: number) => {
   if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)} Cr`;
@@ -35,7 +36,12 @@ const MONTHLY_TREND = [
 
 export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'executive' | 'sales' | 'digital'>('executive');
-  const data = getExecutiveAnalytics({ role: 'HEAD_OFFICE' });
+  const { activeUser } = useDemoStore();
+  const data = getExecutiveAnalytics({
+    role: activeUser?.role,
+    branchId: activeUser?.branch_id,
+    regionId: activeUser?.region_id,
+  });
   const totalPipelineValue = DEMO_LEADS.filter(l => l.stage !== 'Lost').reduce((s, l) => s + l.potential_value, 0);
 
   return (
