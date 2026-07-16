@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DEMO_LEADS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
 import {
   Plus, Filter, LayoutGrid, List, ChevronRight, User,
@@ -35,6 +35,20 @@ export default function LeadsPage() {
   const [movingLead, setMovingLead] = useState<string | null>(null);
   const [crossSellOnly, setCrossSellOnly] = useState(false);
 
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('demo_zrt_created_leads') || '[]');
+      if (stored.length > 0) {
+        setLeads(prev => {
+          const existingIds = new Set(prev.map(l => l.id));
+          const newOnes = stored.filter((l: any) => !existingIds.has(l.id));
+          return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
+        });
+      }
+    } catch (e) {
+      console.error('Could not load ZRT-created leads', e);
+    }
+  }, []);
   const customerById = React.useMemo(
     () => Object.fromEntries(DEMO_CUSTOMERS.map(c => [c.id, c])),
     []

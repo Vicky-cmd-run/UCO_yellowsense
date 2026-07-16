@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDemoStore } from '@/stores/demoStore';
 import { DEMO_VISITS, DEMO_CUSTOMERS } from '@/services/DEMO_DATA';
@@ -80,6 +80,17 @@ export default function ZRTCommandCenter() {
   const [newPurpose, setNewPurpose] = useState('');
   const [newDate, setNewDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+  try {
+    const overrides = JSON.parse(localStorage.getItem('demo_zrt_visit_overrides') || '{}');
+    if (Object.keys(overrides).length > 0) {
+      setVisits(prev => prev.map(v => overrides[v.id] ? { ...v, ...overrides[v.id] } : v));
+    }
+  } catch (e) {
+    console.error('Could not load visit overrides', e);
+  }
+}, []);
 
   const filtered = visits.filter(v => {
     const matchFilter = filter === 'ALL' || v.status === filter;

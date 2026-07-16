@@ -310,30 +310,54 @@ export default function VisitExecutionWizard({ params }: PageProps) {
   //   }
   // };
   // Step 7: Create Lead helper
-  const handleCreateLead = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customer) return;
-    if (!leadProduct || !leadValue) {
-      alert('Provide both product and value.');
-      return;
-    }
+  // Step 7: Create Lead helper
+      const handleCreateLead = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!customer) return;
+        if (!leadProduct || !leadValue) {
+          alert('Provide both product and value.');
+          return;
+        }
 
-    setCreatingLead(true);
-    try {
-      // Simulated lead creation — demo customers (c001, etc.) don't exist as
-      // rows in the live database, so apiService.createLead would 404.
-      // Stays local, matching how the Field Desk simulates scheduling.
-      await new Promise(r => setTimeout(r, 900));
-      setNewLeadCreated(true);
-      alert('Lead successfully queued / created for ' + leadProduct);
-      setCurrentStep(8);
-    } catch (err: any) {
-      console.error(err);
-      alert('Failed to generate lead: ' + err.message);
-    } finally {
-      setCreatingLead(false);
-    }
-  };
+        setCreatingLead(true);
+        try {
+          // Simulated lead creation — demo customers (c001, etc.) don't exist as
+          // rows in the live database, so apiService.createLead would 404.
+          // Stays local, matching how the Field Desk simulates scheduling.
+          await new Promise(r => setTimeout(r, 900));
+
+          // Persist to localStorage so the RM's /leads pipeline can pick this up
+          // after the demo persona switch (which does a full page reload and
+          // would otherwise wipe any in-memory state).
+          const newLead = {
+            id: `zrt-${Date.now()}`,
+            customer_id: customer.id,
+            customer_name: customer.full_name,
+            source: 'ZRT',
+            product: leadProduct,
+            potential_value: parseFloat(leadValue) || 50000,
+            stage: 'New',
+            priority: 'HIGH',
+            conversion_probability: 84,
+            owner_id: 'u002',
+            owner_name: 'Priya Nair',
+            created_at: new Date().toISOString(),
+            follow_up_date: new Date(Date.now() + 86400000).toISOString(),
+            segment: customer.segment,
+          };
+          const existing = JSON.parse(localStorage.getItem('demo_zrt_created_leads') || '[]');
+          localStorage.setItem('demo_zrt_created_leads', JSON.stringify([newLead, ...existing]));
+
+          setNewLeadCreated(true);
+          alert('Lead successfully queued / created for ' + leadProduct);
+          setCurrentStep(8);
+        } catch (err: any) {
+          console.error(err);
+          alert('Failed to generate lead: ' + err.message);
+        } finally {
+          setCreatingLead(false);
+        }
+      };
 
   // // Step 8: Complete Visit submission
   // const handleCompleteVisit = async () => {
@@ -398,6 +422,9 @@ export default function VisitExecutionWizard({ params }: PageProps) {
       if (visit) {
         setVisit({ ...visit, status: 'COMPLETED', check_out_at: new Date().toISOString(), notes });
       }
+      const overrides = JSON.parse(localStorage.getItem('demo_zrt_visit_overrides') || '{}');
+      overrides[visitId] = { status: 'COMPLETED', check_out_at: new Date().toISOString(), notes };
+      localStorage.setItem('demo_zrt_visit_overrides', JSON.stringify(overrides));
 
       if (varianceFlag) {
         alert('⚠ Audit Warning: Travel claims variance detected! Your claimed distance/duration exceeds the system GPS-tracked calculations by more than 20%. This has been logged in the cryptographic ledger for audit review.');
